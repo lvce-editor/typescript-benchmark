@@ -31,6 +31,7 @@ const cacheDir = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(rootDir,
 const fixtureWorkspace = join(cacheDir, 'about-view')
 const fixtureFile = join(fixtureWorkspace, setup.fixture.file)
 const editorBinary = process.env.LVCE_EDITOR_BIN || 'lvce'
+const profileRequests = 10
 const trials: Trial[] = []
 
 const availablePort = async (): Promise<number> => {
@@ -101,7 +102,10 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     await worker.send('Profiler.enable')
     await worker.send('Profiler.start')
     profileStarted = true
-    const featureTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    let featureTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    for (let request = 1; request < profileRequests; request++) {
+      featureTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    }
     const featureTracePath = join(outputDir, `feature-trace-${iteration}.json`)
     await writeFile(featureTracePath, `${JSON.stringify(featureTrace, null, 2)}\n`)
 
@@ -117,6 +121,8 @@ const runTrial = async (iteration: number): Promise<Trial> => {
       iteration, success: true, readyMs, heapUsedBytes: memory.usedSize, processMemoryBytes: null,
       workerUrl: target.url, profilePath: profilePath.replace(`${rootDir}/`, ''),
       featureTracePath: featureTracePath.replace(`${rootDir}/`, ''), featureTrace,
+      profileRequests, profileSampleCount: cpu.profile.samples.length,
+      profileSampledCpuMs: cpu.profile.timeDeltas.reduce((total, delta) => total + delta, 0) / 1000,
     }
   } catch (error) {
     return {
@@ -154,6 +160,7 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
       editor: setup.editor, extension: setup.extension, fixture: setup.fixture,
       readyBoundary: 'Diagnostic.getPerformanceTrace returned a fresh diagnostic trace for the pinned about-view TypeScript file; stopwatch ends after validating the document URI and absence of a diagnostic error',
       memoryBoundary: 'dedicated TypeScript worker V8 usedSize bytes after CPU profile collection; excludes native/external process memory',
+      cpuProfileBoundary: `${profileRequests} sequential warm Diagnostic.getPerformanceTrace calls after cold readiness; CPU samples measure on-CPU time during those calls, not wall time`,
       coldTrials: true,
     },
     trials,
