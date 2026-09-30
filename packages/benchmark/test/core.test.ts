@@ -4,6 +4,7 @@ import { aggregate } from '../src/aggregate.ts'
 import { summarizeProfile } from '../src/profile.ts'
 import { parsePerformanceTrace } from '../src/readTrace.ts'
 import { findTypeScriptWorker } from '../src/findTypeScriptWorker.ts'
+import { TargetSession } from '../src/targetSession.ts'
 import { waitFor } from '../src/waitFor.ts'
 
 test('aggregates successful trial medians and leaves failures visible', () => {
@@ -46,4 +47,8 @@ test('selects only the TypeScript language worker target', () => {
   ]
   assert.equal(findTypeScriptWorker(targets)?.targetId, 'typescript')
   assert.equal(findTypeScriptWorker(targets.slice(0, 2)), undefined)
+})
+
+test('CDP target session helper loads under Node type stripping', () => {
+  assert.equal(typeof TargetSession, 'function')
 })
