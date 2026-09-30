@@ -13,7 +13,7 @@ xvfb-run -a npm run benchmark -- --iterations 5
 npm run report
 ```
 
-`setup` installs the pinned official LVCE Editor `v0.118.23` amd64 Debian release after verifying its published SHA-256 digest. Each trial installs the separately pinned TypeScript language-features `v5.25.2` archive into its isolated LVCE extension directory, where it takes precedence over the older bundled extension. The archive is verified against its published SHA-256 digest. Setup checks out the pinned `about-view` revision and installs that fixture's dependencies. Each trial uses a new LVCE profile and opens `packages/about-view/src/aboutWorkerMain.ts` in the fixture workspace.
+`setup` installs the pinned official LVCE Editor `v0.119.1` amd64 Debian release after verifying its published SHA-256 digest. The Debian package bundles TypeScript language-features `v5.25.2`; trials use that bundled extension. Setup checks out the pinned `about-view` revision and installs that fixture's dependencies. Each trial uses a new LVCE profile and opens `packages/about-view/src/aboutWorkerMain.ts` in the fixture workspace.
 
 ## Measurement boundaries
 

@@ -24,7 +24,7 @@ export interface TypeScriptTrace {
   readonly schemaVersion: 1
   readonly totalDurationMs: number
   readonly commandDurationMs?: number
-  readonly error?: { readonly stage: string; readonly details: { readonly message: string } }
+  readonly error?: { readonly stage: string; readonly details: { readonly message: string; readonly stack?: string } }
   readonly loadedFiles?: readonly LoadedFile[]
   readonly stages?: Readonly<Record<string, { readonly durationMs: number }>>
   readonly syncRpc?: { readonly callCount: number; readonly durationMs: number; readonly methods: Readonly<Record<string, { readonly callCount: number; readonly durationMs: number }>> }
