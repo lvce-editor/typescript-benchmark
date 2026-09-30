@@ -35,13 +35,13 @@ export class TargetSession {
     root.on('Target.receivedMessageFromTarget', this.listener)
   }
 
-  async send<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  async send<T>(method: string, params: Record<string, unknown> = {}, timeoutMs = 10000): Promise<T> {
     const id = ++this.nextId
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
         reject(new Error(`CDP timeout: ${method}`))
-      }, 10000)
+      }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer })
       void this.root.send('Target.sendMessageToTarget', {
         sessionId: this.sessionId,

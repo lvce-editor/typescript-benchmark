@@ -38,4 +38,5 @@ export interface TargetInfo {
   readonly targetId: string
   readonly type: string
   readonly url: string
+  readonly title: string
 }

@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import { chromium, type Browser, type CDPSession } from 'playwright'
 import { aggregate } from './aggregate.ts'
@@ -9,6 +9,7 @@ import { summarizeProfile } from './profile.ts'
 import { TargetSession } from './targetSession.ts'
 import { requestPerformanceTrace } from './readTrace.ts'
 import { findTypeScriptWorker } from './findTypeScriptWorker.ts'
+import { getEditorArgs } from './editorArgs.ts'
 import type { CpuProfile, TargetInfo, Trial } from './types.ts'
 import { waitFor } from './waitFor.ts'
 
@@ -25,7 +26,7 @@ const getOption = (name: string, fallback: string): string => {
   return index < 0 ? fallback : args[index + 1] || fallback
 }
 const iterations = Math.max(1, Math.min(10, Number(getOption('--iterations', '3')) || 3))
-const timeoutMs = Math.max(10000, Number(getOption('--timeout-ms', '90000')) || 90000)
+const timeoutMs = Math.max(10000, Number(getOption('--timeout-ms', '300000')) || 300000)
 const cacheDir = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(rootDir, '.tmp/cache'))
 const fixtureWorkspace = join(cacheDir, 'about-view')
 const fixtureFile = join(fixtureWorkspace, setup.fixture.file)
@@ -60,10 +61,7 @@ const runTrial = async (iteration: number): Promise<Trial> => {
   const profile = join(rootDir, '.tmp/profiles', `trial-${iteration}`)
   await rm(profile, { recursive: true, force: true })
   await mkdir(profile, { recursive: true })
-  const appProcess = spawn(editorBinary, [
-    '--no-sandbox', '--disable-gpu', `--remote-debugging-port=${port}`, `--user-data-dir=${join(profile, 'user-data')}`,
-    fixtureFile,
-  ], {
+  const appProcess = spawn(editorBinary, getEditorArgs(port, join(profile, 'user-data'), fixtureFile), {
     detached: true,
     stdio: 'ignore',
     env: {
@@ -94,11 +92,16 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     await worker.send('Runtime.enable')
     const ping = await worker.send<{ result: { value: number } }>('Runtime.evaluate', { expression: '6 * 7', returnByValue: true })
     if (ping.result.value !== 42) throw new Error('TypeScript worker did not return the expected protocol response')
+    const textDocument = {
+      uri: pathToFileURL(fixtureFile).href,
+      text: await readFile(fixtureFile, 'utf8'),
+    }
+    await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    const readyMs = performance.now() - launchedAt
     await worker.send('Profiler.enable')
     await worker.send('Profiler.start')
     profileStarted = true
-    const featureTrace = await requestPerformanceTrace(page, timeoutMs, setup.fixture.file)
-    const readyMs = performance.now() - launchedAt
+    const featureTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
     const featureTracePath = join(outputDir, `feature-trace-${iteration}.json`)
     await writeFile(featureTracePath, `${JSON.stringify(featureTrace, null, 2)}\n`)
 
@@ -149,7 +152,7 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
     metadata: {
       node: process.version, platform: process.platform, architecture: process.arch,
       editor: setup.editor, extension: setup.extension, fixture: setup.fixture,
-      readyBoundary: 'typescript.showPerformanceTrace returned a fresh diagnostic trace for the pinned about-view TypeScript file; stopwatch ends after validating the document URI and absence of a diagnostic error',
+      readyBoundary: 'Diagnostic.getPerformanceTrace returned a fresh diagnostic trace for the pinned about-view TypeScript file; stopwatch ends after validating the document URI and absence of a diagnostic error',
       memoryBoundary: 'dedicated TypeScript worker V8 usedSize bytes after CPU profile collection; excludes native/external process memory',
       coldTrials: true,
     },

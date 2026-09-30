@@ -1,6 +1,5 @@
-import type { Page } from 'playwright'
+import type { TargetSession } from './targetSession.ts'
 import type { TypeScriptTrace } from './types.ts'
-import { waitFor } from './waitFor.ts'
 
 export const parsePerformanceTrace = (text: string): TypeScriptTrace | undefined => {
   const marker = text.indexOf('"schemaVersion"')
@@ -35,17 +34,24 @@ export const parsePerformanceTrace = (text: string): TypeScriptTrace | undefined
   return undefined
 }
 
-export const requestPerformanceTrace = async (page: Page, timeoutMs: number, expectedFile: string): Promise<TypeScriptTrace> => {
-  await page.bringToFront()
-  await page.keyboard.press('Control+Shift+P')
-  await page.keyboard.type('typescript.showPerformanceTrace')
-  await page.keyboard.press('Enter')
-  const trace = await waitFor(async () => {
-    const editorLines = await page.locator('.view-line:visible').allTextContents().catch(() => [])
-    const bodyText = await page.locator('body').innerText().catch(() => '')
-    const output = editorLines.length ? editorLines.join('\n') : bodyText
-    return parsePerformanceTrace(output)
-  }, timeoutMs, 200)
+export const requestPerformanceTrace = async (
+  worker: TargetSession,
+  timeoutMs: number,
+  expectedFile: string,
+  textDocument: { readonly text: string; readonly uri: string },
+): Promise<TypeScriptTrace> => {
+  const expression = `globalThis.rpc.invoke('TypeScriptRpc.invoke', 'Diagnostic.getPerformanceTrace', ${JSON.stringify(textDocument)})`
+  const response = await worker.send<{
+    readonly result?: { readonly value?: TypeScriptTrace }
+    readonly exceptionDetails?: { readonly text: string; readonly exception?: { readonly description?: string } }
+  }>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, timeoutMs)
+  if (response.exceptionDetails) {
+    throw new Error(`TypeScript diagnostics RPC failed: ${response.exceptionDetails.exception?.description || response.exceptionDetails.text}`)
+  }
+  const trace = response.result?.value
+  if (!trace || trace.schemaVersion !== 1 || trace.fresh !== true) {
+    throw new Error('TypeScript worker returned an invalid performance trace')
+  }
   if (trace.error) throw new Error(`TypeScript diagnostics failed at ${trace.error.stage}: ${trace.error.details.message}`)
   if (trace.file.uri && !trace.file.uri.endsWith(expectedFile)) {
     throw new Error(`TypeScript trace targeted ${trace.file.uri}; expected ${expectedFile}`)

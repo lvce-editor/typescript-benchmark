@@ -6,6 +6,7 @@ import { parsePerformanceTrace } from '../src/readTrace.ts'
 import { findTypeScriptWorker } from '../src/findTypeScriptWorker.ts'
 import { TargetSession } from '../src/targetSession.ts'
 import { waitFor } from '../src/waitFor.ts'
+import { getEditorArgs } from '../src/editorArgs.ts'
 
 test('aggregates successful trial medians and leaves failures visible', () => {
   const result = aggregate([
@@ -41,9 +42,9 @@ test('parses a nested performance trace and rejects non-trace editor contents', 
 
 test('selects only the TypeScript language worker target', () => {
   const targets = [
-    { targetId: 'renderer', type: 'page', url: 'file:///lvce/index.html' },
-    { targetId: 'other-worker', type: 'worker', url: 'file:///extensions/eslintWorkerMain.js' },
-    { targetId: 'typescript', type: 'worker', url: 'file:///extensions/typescriptWorkerMain.js?v=1' },
+    { targetId: 'renderer', type: 'page', url: 'file:///lvce/index.html', title: 'LVCE' },
+    { targetId: 'eslint', type: 'worker', url: 'file:///extensions/extensionHostSubWorkerMain.js', title: '[worker-17] ESLint Worker' },
+    { targetId: 'typescript', type: 'worker', url: 'file:///extensions/extensionHostSubWorkerMain.js', title: '[worker-19] TypeScript Worker' },
   ]
   assert.equal(findTypeScriptWorker(targets)?.targetId, 'typescript')
   assert.equal(findTypeScriptWorker(targets.slice(0, 2)), undefined)
@@ -51,4 +52,11 @@ test('selects only the TypeScript language worker target', () => {
 
 test('CDP target session helper loads under Node type stripping', () => {
   assert.equal(typeof TargetSession, 'function')
+})
+
+test('launches LVCE in wait mode so shutdown reaches the Electron process', () => {
+  assert.deepEqual(getEditorArgs(9222, '/tmp/lvce-profile', '/workspace/aboutWorkerMain.ts'), [
+    '--wait', '--no-sandbox', '--disable-gpu', '--remote-debugging-port=9222', '--user-data-dir=/tmp/lvce-profile',
+    '/workspace/aboutWorkerMain.ts',
+  ])
 })
