@@ -8,9 +8,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const cache = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(root, '.tmp/cache'))
 const resultPath = join(root, '.tmp/setup.json')
 const editorTag = 'v0.118.23'
-const extensionRelease = 'v5.23.0'
-const extensionAsset = 'language-features-typescript-v5.23.0.tar.br'
-const extensionSha256 = '3187e2256fca023c58813a1ca3f6553fb1ba2d5cd707eb495a1ad1a33047a996'
+const extensionRelease = 'v5.25.1'
+const extensionAsset = 'language-features-typescript-v5.25.1.tar.br'
+const extensionSha256 = 'ee0baf9935b8c70454e1a0cd726282367db3d780476da214480dfc068ad24a1a'
 const editorAsset = `lvce-${editorTag}_amd64.deb`
 const editorSha256 = '208d760d9d7f99cc6590732b677d3b4206145d5a911d00ea036a044abe72a3c7'
 const aboutViewCommit = '15fe112cf4b82ab72eaa6d29589aede9e53d96d4'
@@ -52,6 +52,14 @@ if (!publishedExtensionAsset) throw new Error(`TypeScript extension release ${ex
 if (publishedExtensionAsset.digest !== `sha256:${extensionSha256}`) {
   throw new Error(`TypeScript extension checksum mismatch: expected ${extensionSha256}, received ${publishedExtensionAsset.digest}`)
 }
+const extensionArchiveResponse = await fetch(`https://github.com/lvce-editor/language-features-typescript/releases/download/${extensionRelease}/${extensionAsset}`, {
+  headers: { 'user-agent': 'typescript-benchmark' },
+})
+if (!extensionArchiveResponse.ok) throw new Error(`Unable to download TypeScript extension ${extensionRelease}: HTTP ${extensionArchiveResponse.status}`)
+const extensionArchive = Buffer.from(await extensionArchiveResponse.arrayBuffer())
+const actualExtensionDigest = createHash('sha256').update(extensionArchive).digest('hex')
+if (actualExtensionDigest !== extensionSha256) throw new Error(`TypeScript extension checksum mismatch: expected ${extensionSha256}, received ${actualExtensionDigest}`)
+await writeFile(join(cache, extensionAsset), extensionArchive)
 
 if (process.platform !== 'linux') throw new Error('The official LVCE Debian benchmark setup requires Linux')
 run('sudo', ['apt-get', 'update'], { stdio: 'inherit' })
@@ -76,7 +84,7 @@ const metadata = {
     repository: 'https://github.com/lvce-editor/language-features-typescript',
     release: extensionRelease,
     asset: extensionAsset,
-    sha256: extensionSha256,
+    sha256: actualExtensionDigest,
     releaseUrl: extensionReleaseData.html_url,
     publishedAt: extensionReleaseData.published_at,
     sourceCommit: extensionReleaseData.target_commitish,
@@ -85,4 +93,4 @@ const metadata = {
 }
 await mkdir(dirname(resultPath), { recursive: true })
 await writeFile(resultPath, `${JSON.stringify(metadata, null, 2)}\n`)
-console.log(`Installed LVCE Editor ${editorTag}; fixture ${fixtureRevision}:${metadata.fixture.file}`)
+console.log(`Installed LVCE Editor ${editorTag} with TypeScript extension ${extensionRelease}; fixture ${fixtureRevision}:${metadata.fixture.file}`)

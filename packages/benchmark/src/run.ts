@@ -2,7 +2,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { brotliDecompressSync } from 'node:zlib'
 import { chromium, type Browser, type CDPSession } from 'playwright'
 import { aggregate } from './aggregate.ts'
 import { summarizeProfile } from './profile.ts'
@@ -17,7 +18,7 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const outputDir = resolve(process.env.BENCHMARK_OUTPUT || join(rootDir, 'results'))
 const setup = JSON.parse(await readFile(join(rootDir, '.tmp/setup.json'), 'utf8')) as {
   editor: { tag: string; asset: string; sha256: string }
-  extension: { repository: string; release: string }
+  extension: { repository: string; release: string; asset: string }
   fixture: { repository: string; commit: string; file: string }
 }
 const args = process.argv.slice(2)
@@ -62,6 +63,22 @@ const runTrial = async (iteration: number): Promise<Trial> => {
   const profile = join(rootDir, '.tmp/profiles', `trial-${iteration}`)
   await rm(profile, { recursive: true, force: true })
   await mkdir(profile, { recursive: true })
+  const extensionPath = join(profile, 'data/lvce-oss/extensions/builtin.language-features-typescript')
+  try {
+    await mkdir(extensionPath, { recursive: true })
+    const extensionArchive = brotliDecompressSync(await readFile(join(cacheDir, setup.extension.asset)))
+    const extraction = spawnSync('tar', ['-xf', '-', '-C', extensionPath], { input: extensionArchive, encoding: 'utf8' })
+    if (extraction.error || extraction.status !== 0) {
+      throw new Error(`Unable to extract the verified TypeScript extension: ${extraction.stderr || extraction.error}`)
+    }
+    const extensionManifest = JSON.parse(await readFile(join(extensionPath, 'extension.json'), 'utf8')) as { id?: string }
+    if (extensionManifest.id !== 'builtin.language-features-typescript') {
+      throw new Error(`Unexpected TypeScript extension id: ${extensionManifest.id}`)
+    }
+  } catch (error) {
+    await rm(profile, { recursive: true, force: true })
+    throw error
+  }
   const appProcess = spawn(editorBinary, getEditorArgs(port, join(profile, 'user-data'), fixtureFile), {
     detached: true,
     stdio: 'ignore',
@@ -98,6 +115,7 @@ const runTrial = async (iteration: number): Promise<Trial> => {
       text: await readFile(fixtureFile, 'utf8'),
     }
     const initialTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    if (!initialTrace.loadedFiles?.length) throw new Error('The installed TypeScript extension did not report loaded files')
     const readyMs = performance.now() - launchedAt
     await worker.send('Profiler.enable')
     await worker.send('Profiler.start')
