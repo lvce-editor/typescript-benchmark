@@ -37,6 +37,7 @@ export interface TypeScriptTrace {
   readonly fresh: true
   readonly schemaVersion: 1
   readonly totalDurationMs: number
+  readonly languageService?: { readonly cache: 'created' | 'reused'; readonly configPath?: string; readonly fileCount?: number }
   readonly commandDurationMs?: number
   readonly error?: { readonly stage: string; readonly details: { readonly message: string; readonly stack?: string } }
   readonly loadedFiles?: readonly LoadedFile[]

@@ -102,7 +102,10 @@ const runTrial = async (iteration: number): Promise<Trial> => {
       text: await readFile(fixtureFile, 'utf8'),
     }
     const fixtureReadAt = performance.now()
-    const initialTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    const initialTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument, 'getFirstPerformanceTrace')
+    if (initialTrace.languageService?.cache !== 'created') {
+      throw new Error(`The first diagnostic trace was not captured during language-service creation: ${initialTrace.languageService?.cache || 'cache state unavailable'}`)
+    }
     if (!initialTrace.loadedFiles?.length) throw new Error('The installed TypeScript extension did not report loaded files')
     const readyAt = performance.now()
     const readyMs = readyAt - launchedAt

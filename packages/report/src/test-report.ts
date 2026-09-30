@@ -35,6 +35,7 @@ const populated = renderPages({
     startupPhases: { launchToCdp: 1, pageReady: 2, workerDiscovery: 1, workerProtocol: 1, fixtureRead: 1, coldDiagnostic: 4 },
     coldTracePath: 'cold-trace-1.json', coldTrace: {
     file: { uri: 'file:///workspace/main.ts' }, fresh: true, schemaVersion: 1, totalDurationMs: 3,
+    languageService: { cache: 'created' },
     stages: { semanticDiagnostics: { durationMs: 3 } },
     syncRpc: { callCount: 3, durationMs: 2, methods: { 'SyncApi.readFileSync': { callCount: 2, durationMs: 1.5 } } },
     loadedFiles: [
@@ -67,6 +68,8 @@ assert.match(populated.breakdown, /TypeScript language-service files · 2 distin
 assert.match(populated.index, /Cold startup phases · median sequential time/)
 assert.match(populated.index, /Remaining within readiness interval/)
 assert.match(populated.breakdown, /Cold diagnostic stages/)
+assert.match(populated.breakdown, /First diagnostic pass · median internal duration/)
+assert.match(populated.breakdown, /cache state: created/)
 assert.match(populated.breakdown, /Cold synchronous RPC wall time/)
 assert.match(populated.breakdown, /Cold synchronous RPC calls/)
 assert.match(populated.breakdown, /RPC duration includes transport and waiting/)

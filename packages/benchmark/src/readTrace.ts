@@ -39,8 +39,9 @@ export const requestPerformanceTrace = async (
   timeoutMs: number,
   expectedFile: string,
   textDocument: { readonly text: string; readonly uri: string },
+  operation: 'getPerformanceTrace' | 'getFirstPerformanceTrace' = 'getPerformanceTrace',
 ): Promise<TypeScriptTrace> => {
-  const expression = `globalThis.rpc.invoke('TypeScriptRpc.invoke', 'Diagnostic.getPerformanceTrace', ${JSON.stringify(textDocument)})`
+  const expression = `globalThis.rpc.invoke('TypeScriptRpc.invoke', 'Diagnostic.${operation}', ${JSON.stringify(textDocument)})`
   const response = await worker.send<{
     readonly result?: { readonly value?: TypeScriptTrace }
     readonly exceptionDetails?: { readonly text: string; readonly exception?: { readonly description?: string } }
