@@ -25,28 +25,38 @@ test('waitFor rejects when its readiness condition never appears', async () => {
 })
 
 test('summarizes self and inclusive CPU samples by source location', () => {
-  const rows = summarizeProfile({
+  const summary = summarizeProfile({
     nodes: [
-      { id: 1, callFrame: { functionName: '(root)', url: '' }, children: [2] },
+      { id: 1, callFrame: { functionName: '(root)', url: '' }, children: [2, 4] },
       { id: 2, callFrame: { functionName: 'parse', url: 'typescript.js', lineNumber: 10, columnNumber: 3 }, children: [3] },
       { id: 3, callFrame: { functionName: 'tokenize', url: 'typescript.js', lineNumber: 20, columnNumber: 7 } },
+      { id: 4, callFrame: { functionName: '(idle)', url: '' } },
     ],
-    samples: [3, 2, 3],
-    timeDeltas: [1000, 2000, 3000],
+    samples: [3, 2, 3, 4],
+    timeDeltas: [1000, 2000, 3000, 1000000],
   })
-  assert.deepEqual(rows[0], {
+  assert.equal(summary.sampleCount, 4)
+  assert.equal(summary.activeSampleCount, 3)
+  assert.equal(summary.idleSampleCount, 1)
+  assert.equal(summary.activeMs, 6)
+  assert.equal(summary.idleMs, 1000)
+  assert.equal(summary.profileWindowMs, 1006)
+  assert.equal(summary.rows.some((row) => row.functionName === '(idle)'), false)
+  assert.deepEqual(summary.rows[0], {
     functionName: 'tokenize', url: 'typescript.js', lineNumber: 20, columnNumber: 7,
-    selfTimeMs: 4, inclusiveTimeMs: 4, selfPercent: 4000 / 6 / 10, inclusivePercent: 4000 / 6 / 10, sampleCount: 2,
+    selfTimeMs: 4, inclusiveTimeMs: 4, selfPercent: 4000 / 6000 * 100, inclusivePercent: 4000 / 6000 * 100, sampleCount: 2,
   })
-  const parse = rows.find((row) => row.functionName === 'parse')
+  const parse = summary.rows.find((row) => row.functionName === 'parse')
   assert.equal(parse?.selfTimeMs, 2)
   assert.equal(parse?.inclusiveTimeMs, 6)
-  assert.equal(parse?.selfPercent, 2000 / 6 / 10)
+  assert.equal(parse?.selfPercent, 2000 / 6000 * 100)
   assert.equal(parse?.inclusivePercent, 100)
 })
 
 test('accepts an empty CPU profile and rejects malformed profile trees or samples', () => {
-  assert.deepEqual(summarizeProfile({ nodes: [], samples: [], timeDeltas: [] }), [])
+  assert.deepEqual(summarizeProfile({ nodes: [], samples: [], timeDeltas: [] }), {
+    rows: [], sampleCount: 0, activeSampleCount: 0, idleSampleCount: 0, activeMs: 0, idleMs: 0, profileWindowMs: 0,
+  })
   assert.throws(() => summarizeProfile({ nodes: [], samples: [1], timeDeltas: [] }), /Invalid Chromium CPU profile/)
   assert.throws(() => summarizeProfile({
     nodes: [{ id: 1, callFrame: { functionName: 'a', url: '' }, children: [2] }], samples: [], timeDeltas: [],

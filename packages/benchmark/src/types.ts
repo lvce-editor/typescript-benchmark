@@ -10,7 +10,11 @@ export interface Trial {
   readonly featureTrace?: TypeScriptTrace
   readonly profileRequests?: number
   readonly profileSampleCount?: number
-  readonly profileSampledCpuMs?: number
+  readonly profileActiveSampleCount?: number
+  readonly profileIdleSampleCount?: number
+  readonly profileActiveMs?: number
+  readonly profileIdleMs?: number
+  readonly profileWindowMs?: number
   readonly error?: string
 }
 
@@ -41,6 +45,16 @@ export interface ProfileRow {
   readonly selfPercent: number
   readonly inclusivePercent: number
   readonly sampleCount: number
+}
+
+export interface CpuProfileSummary {
+  readonly rows: readonly ProfileRow[]
+  readonly sampleCount: number
+  readonly activeSampleCount: number
+  readonly idleSampleCount: number
+  readonly activeMs: number
+  readonly idleMs: number
+  readonly profileWindowMs: number
 }
 
 export interface TargetInfo {
