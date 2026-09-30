@@ -46,7 +46,7 @@ const barChart = (title: string, labels: readonly string[], values: readonly (nu
 const shell = (title: string, content: string): string => `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)} — TypeScript benchmark</title>
 <style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:40px auto;padding:0 20px;color:#17212b;background:#f7f9fb}h1{font-size:2rem}h2{font-size:1.25rem}.nav a{margin-right:18px}.card,section{background:white;border:1px solid #dce3ea;border-radius:8px;padding:18px;margin:18px 0}.metric{margin:14px 0}.metric-label{display:flex;justify-content:space-between;gap:12px}.track{height:12px;background:#e7edf3;border-radius:6px;overflow:hidden;margin-top:6px}.track span{display:block;height:100%;background:#2276b8}.failure{color:#9c2630;white-space:pre-wrap;font-family:monospace}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #dce3ea;padding:8px;overflow-wrap:anywhere}.meta{font-size:.9rem;color:#455565}</style>
-<body><h1>${escapeHtml(title)}</h1><nav class="nav"><a href="index.html">Readiness and memory</a><a href="breakdown.html">Startup and CPU breakdown</a><a href="trials.json" download>Raw trials</a></nav>${content}</body></html>`
+<body><h1>${escapeHtml(title)}</h1><nav class="nav"><a href="comparison.html">LVCE vs VS Code</a><a href="index.html">Readiness and memory</a><a href="breakdown.html">Startup and CPU breakdown</a><a href="trials.json" download>Raw trials</a></nav>${content}</body></html>`
 
 export const renderPages = (data: BenchmarkData, profiles: ProfileBreakdown): { index: string; breakdown: string } => {
   const summary = aggregate(data.trials)

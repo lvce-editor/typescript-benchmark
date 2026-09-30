@@ -10,9 +10,11 @@
     "setup": "node packages/build/src/setup.ts",
     "benchmark": "node packages/benchmark/src/run.ts",
     "report": "node packages/report/src/report.ts",
-    "test": "node --test packages/benchmark/test/core.test.ts",
+    "test": "node --test packages/benchmark/test/*.test.ts",
     "type-check": "tsc --noEmit",
-    "test:report": "node packages/report/src/test-report.ts"
+    "test:report": "node packages/report/src/test-report.ts",
+    "setup:comparison": "node packages/build/src/setupComparison.ts",
+    "benchmark:comparison": "node packages/benchmark/src/comparison.ts"
   },
   "engines": {
     "node": ">=26"
