@@ -16,7 +16,7 @@ import { waitFor } from './waitFor.ts'
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const outputDir = resolve(process.env.BENCHMARK_OUTPUT || join(rootDir, 'results'))
 const setup = JSON.parse(await readFile(join(rootDir, '.tmp/setup.json'), 'utf8')) as {
-  editor: { tag: string; asset: string; sha256: string }
+  editor: { tag: string; asset: string; sha256: string; dataDirectoryName: string }
   extension: { repository: string; release: string; sha256: string; id: string; directory: string; overridesBundled: boolean }
   fixture: { repository: string; commit: string; file: string }
 }
@@ -63,7 +63,7 @@ const runTrial = async (iteration: number): Promise<Trial> => {
   await rm(profile, { recursive: true, force: true })
   await mkdir(profile, { recursive: true })
   const dataHome = join(profile, 'data')
-  const extensionInstallPath = join(dataHome, 'lvce-oss', 'extensions', setup.extension.id)
+  const extensionInstallPath = join(dataHome, setup.editor.dataDirectoryName, 'extensions', setup.extension.id)
   await mkdir(dirname(extensionInstallPath), { recursive: true })
   await cp(setup.extension.directory, extensionInstallPath, { recursive: true })
   const launchedAt = performance.now()

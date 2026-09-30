@@ -9,6 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const cache = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(root, '.tmp/cache'))
 const resultPath = join(root, '.tmp/setup.json')
 const editorTag = 'v0.119.1'
+const editorDataDirectoryName = 'lvce'
 const extensionRelease = 'v5.25.3'
 const extensionId = 'builtin.language-features-typescript'
 const editorAsset = `lvce-${editorTag}_amd64.deb`
@@ -79,7 +80,7 @@ await readFile(fixtureFile)
 run('npm', ['ci', '--ignore-scripts'], { cwd: fixtureRoot, stdio: 'inherit' })
 
 const metadata = {
-  editor: { tag: editorTag, asset: editorAsset, sha256: actualDigest },
+  editor: { tag: editorTag, asset: editorAsset, sha256: actualDigest, dataDirectoryName: editorDataDirectoryName },
   extension: {
     repository: 'https://github.com/lvce-editor/language-features-typescript',
     release: extensionRelease,
