@@ -2,12 +2,15 @@ export interface Trial {
   readonly iteration: number
   readonly success: boolean
   readonly readyMs: number | null
+  readonly startupPhases?: Readonly<Record<string, number>>
   readonly heapUsedBytes: number | null
   readonly processMemoryBytes: number | null
   readonly workerUrl?: string
   readonly profilePath?: string
   readonly featureTracePath?: string
   readonly featureTrace?: TypeScriptTrace
+  readonly coldTracePath?: string
+  readonly coldTrace?: TypeScriptTrace
   readonly profileRequests?: number
   readonly profileSampleCount?: number
   readonly profileActiveSampleCount?: number
@@ -18,11 +21,23 @@ export interface Trial {
   readonly error?: string
 }
 
+export const startupPhaseNames = [
+  'launchToCdp',
+  'pageReady',
+  'workerDiscovery',
+  'workerProtocol',
+  'fixtureRead',
+  'coldDiagnostic',
+] as const
+
+export type StartupPhaseName = (typeof startupPhaseNames)[number]
+
 export interface TypeScriptTrace {
   readonly file: { readonly uri?: string }
   readonly fresh: true
   readonly schemaVersion: 1
   readonly totalDurationMs: number
+  readonly languageService?: { readonly cache: 'created' | 'reused'; readonly configPath?: string; readonly fileCount?: number }
   readonly commandDurationMs?: number
   readonly error?: { readonly stage: string; readonly details: { readonly message: string; readonly stack?: string } }
   readonly loadedFiles?: readonly LoadedFile[]

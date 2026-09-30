@@ -31,7 +31,19 @@ const populated = renderPages({
     fixture: { repository: 'about-view', commit: '1234567890', file: 'aboutWorkerMain.ts' },
     readyBoundary: 'cold readiness', memoryBoundary: 'worker heap',
   },
-  trials: [{ iteration: 1, success: true, readyMs: 10, heapUsedBytes: 100, processMemoryBytes: null, featureTrace: {
+  trials: [{ iteration: 1, success: true, readyMs: 10, heapUsedBytes: 100, processMemoryBytes: null,
+    startupPhases: { launchToCdp: 1, pageReady: 2, workerDiscovery: 1, workerProtocol: 1, fixtureRead: 1, coldDiagnostic: 4 },
+    coldTracePath: 'cold-trace-1.json', coldTrace: {
+    file: { uri: 'file:///workspace/main.ts' }, fresh: true, schemaVersion: 1, totalDurationMs: 3,
+    languageService: { cache: 'created' },
+    stages: { semanticDiagnostics: { durationMs: 3 } },
+    syncRpc: { callCount: 3, durationMs: 2, methods: { 'SyncApi.readFileSync': { callCount: 2, durationMs: 1.5 } } },
+    loadedFiles: [
+      { fileName: '/workspace/<main>.ts', sizeBytes: 2048 },
+      { fileName: '/typescript/lib.d.ts', sizeBytes: 4096 },
+      { fileName: '/typescript/lib.d.ts', sizeBytes: 4096 },
+    ],
+  }, featureTrace: {
     file: { uri: 'file:///workspace/main.ts' }, fresh: true, schemaVersion: 1, totalDurationMs: 1,
     loadedFiles: [
       { fileName: '/workspace/<main>.ts', sizeBytes: 2048 },
@@ -53,6 +65,15 @@ assert.match(populated.breakdown, /4 active samples represent 10\.00 ms of sampl
 assert.match(populated.breakdown, /4\.00 ms \(40\.0%\)/)
 assert.match(populated.breakdown, /8\.00 ms \(80\.0%\)/)
 assert.match(populated.breakdown, /TypeScript language-service files · 2 distinct files/)
+assert.match(populated.index, /Cold startup phases · median sequential time/)
+assert.match(populated.index, /Remaining within readiness interval/)
+assert.match(populated.breakdown, /Cold diagnostic stages/)
+assert.match(populated.breakdown, /First diagnostic pass · median internal duration/)
+assert.match(populated.breakdown, /cache state: created/)
+assert.match(populated.breakdown, /Cold synchronous RPC wall time/)
+assert.match(populated.breakdown, /Cold synchronous RPC calls/)
+assert.match(populated.breakdown, /RPC duration includes transport and waiting/)
+assert.match(populated.breakdown, /cold-trace-1\.json/)
 assert.ok(populated.breakdown.indexOf('/typescript/lib.d.ts') < populated.breakdown.indexOf('/workspace/&lt;main&gt;.ts'))
 assert.match(populated.breakdown, /4\.0 KiB \(4096 B\)/)
 assert.match(populated.breakdown, /style="width:100%"/)
@@ -62,7 +83,7 @@ const emptyFiles = renderPages({
     fixture: { repository: 'about-view', commit: '1234567890', file: 'aboutWorkerMain.ts' },
     readyBoundary: 'cold readiness', memoryBoundary: 'worker heap',
   },
-  trials: [{ iteration: 1, success: true, readyMs: 10, heapUsedBytes: 100, processMemoryBytes: null, featureTrace: {
+  trials: [{ iteration: 1, success: true, readyMs: 10, heapUsedBytes: 100, processMemoryBytes: null, coldTrace: {
     file: { uri: 'file:///workspace/main.ts' }, fresh: true, schemaVersion: 1, totalDurationMs: 1, loadedFiles: [],
   } }],
 }, {
@@ -71,6 +92,7 @@ const emptyFiles = renderPages({
 })
 assert.match(emptyFiles.breakdown, /0 distinct files/)
 assert.match(emptyFiles.breakdown, /No files were loaded into the TypeScript compiler program/)
+assert.match(emptyFiles.index, /Remaining within readiness interval[\s\S]*unavailable/)
 const aggregatedRows = aggregateProfiles([
   { rows: [{
     functionName: 'parse', url: 'typescript.js', lineNumber: 3, columnNumber: 0,

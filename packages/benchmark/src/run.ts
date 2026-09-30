@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -16,8 +16,8 @@ import { waitFor } from './waitFor.ts'
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const outputDir = resolve(process.env.BENCHMARK_OUTPUT || join(rootDir, 'results'))
 const setup = JSON.parse(await readFile(join(rootDir, '.tmp/setup.json'), 'utf8')) as {
-  editor: { tag: string; asset: string; sha256: string }
-  extension: { repository: string; release: string; bundled: boolean }
+  editor: { tag: string; asset: string; sha256: string; dataDirectoryName: string }
+  extension: { repository: string; release: string; sha256: string; id: string; directory: string; overridesBundled: boolean }
   fixture: { repository: string; commit: string; file: string }
 }
 const args = process.argv.slice(2)
@@ -62,44 +62,67 @@ const runTrial = async (iteration: number): Promise<Trial> => {
   const profile = join(rootDir, '.tmp/profiles', `trial-${iteration}`)
   await rm(profile, { recursive: true, force: true })
   await mkdir(profile, { recursive: true })
+  const dataHome = join(profile, 'data')
+  const extensionInstallPath = join(dataHome, setup.editor.dataDirectoryName, 'extensions', setup.extension.id)
+  await mkdir(dirname(extensionInstallPath), { recursive: true })
+  await cp(setup.extension.directory, extensionInstallPath, { recursive: true })
+  const launchedAt = performance.now()
   const appProcess = spawn(editorBinary, getEditorArgs(port, join(profile, 'user-data'), fixtureFile), {
     detached: true,
     stdio: 'ignore',
     env: {
       ...process.env,
       XDG_CONFIG_HOME: join(profile, 'config'),
-      XDG_DATA_HOME: join(profile, 'data'),
+      XDG_DATA_HOME: dataHome,
       XDG_CACHE_HOME: join(profile, 'cache'),
       XDG_STATE_HOME: join(profile, 'state'),
     },
   })
   const launchError = new Promise<never>((_resolve, reject) => appProcess.once('error', reject))
-  const launchedAt = performance.now()
   let browser: Browser | undefined
   let root: CDPSession | undefined
   let worker: TargetSession | undefined
   let profileStarted = false
   try {
     browser = await Promise.race([connect(port), launchError])
+    const cdpConnectedAt = performance.now()
     const page = await waitFor(async () => browser!.contexts().flatMap((context) => context.pages()).find((item) => item.url() !== 'about:blank'), timeoutMs)
+    const pageReadyAt = performance.now()
     root = await browser.newBrowserCDPSession()
     await root.send('Target.setDiscoverTargets', { discover: true })
     const target = await waitFor(async () => {
       const { targetInfos } = await root!.send('Target.getTargets') as { targetInfos: TargetInfo[] }
       return findTypeScriptWorker(targetInfos)
     }, timeoutMs)
+    const workerDiscoveredAt = performance.now()
     const { sessionId } = await root.send('Target.attachToTarget', { targetId: target.targetId, flatten: false })
     worker = new TargetSession(root, sessionId)
     await worker.send('Runtime.enable')
     const ping = await worker.send<{ result: { value: number } }>('Runtime.evaluate', { expression: '6 * 7', returnByValue: true })
     if (ping.result.value !== 42) throw new Error('TypeScript worker did not return the expected protocol response')
+    const workerProtocolReadyAt = performance.now()
     const textDocument = {
       uri: pathToFileURL(fixtureFile).href,
       text: await readFile(fixtureFile, 'utf8'),
     }
-    const initialTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    const fixtureReadAt = performance.now()
+    const initialTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument, 'getFirstPerformanceTrace')
+    if (initialTrace.languageService?.cache !== 'created') {
+      throw new Error(`The first diagnostic trace was not captured during language-service creation: ${initialTrace.languageService?.cache || 'cache state unavailable'}`)
+    }
     if (!initialTrace.loadedFiles?.length) throw new Error('The installed TypeScript extension did not report loaded files')
-    const readyMs = performance.now() - launchedAt
+    const readyAt = performance.now()
+    const readyMs = readyAt - launchedAt
+    const coldTracePath = join(outputDir, `cold-trace-${iteration}.json`)
+    await writeFile(coldTracePath, `${JSON.stringify(initialTrace, null, 2)}\n`)
+    const startupPhases = {
+      launchToCdp: cdpConnectedAt - launchedAt,
+      pageReady: pageReadyAt - cdpConnectedAt,
+      workerDiscovery: workerDiscoveredAt - pageReadyAt,
+      workerProtocol: workerProtocolReadyAt - workerDiscoveredAt,
+      fixtureRead: fixtureReadAt - workerProtocolReadyAt,
+      coldDiagnostic: readyAt - fixtureReadAt,
+    }
     await worker.send('Profiler.enable')
     await worker.send('Profiler.start')
     profileStarted = true
@@ -121,8 +144,9 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     const memory = await worker.send<{ usedSize: number; totalSize: number }>('Runtime.getHeapUsage')
     if (!Number.isFinite(memory.usedSize) || memory.usedSize <= 0) throw new Error(`Invalid TypeScript worker heap reading: ${memory.usedSize}`)
     return {
-      iteration, success: true, readyMs, heapUsedBytes: memory.usedSize, processMemoryBytes: null,
+      iteration, success: true, readyMs, startupPhases, heapUsedBytes: memory.usedSize, processMemoryBytes: null,
       workerUrl: target.url, profilePath: profilePath.replace(`${rootDir}/`, ''),
+      coldTracePath: `cold-trace-${iteration}.json`, coldTrace: initialTrace,
       featureTracePath: featureTracePath.replace(`${rootDir}/`, ''), featureTrace,
       profileRequests, profileSampleCount: profileSummary.sampleCount,
       profileActiveSampleCount: profileSummary.activeSampleCount,
@@ -165,7 +189,7 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
     metadata: {
       node: process.version, platform: process.platform, architecture: process.arch,
       editor: setup.editor, extension: setup.extension, fixture: setup.fixture,
-      readyBoundary: 'Diagnostic.getPerformanceTrace returned a fresh diagnostic trace for the pinned about-view TypeScript file; stopwatch ends after validating the document URI and absence of a diagnostic error',
+      readyBoundary: 'Diagnostic.getFirstPerformanceTrace returned the first cold diagnostic trace for the pinned about-view TypeScript file; stopwatch starts immediately before launching LVCE and ends after validating the document URI and absence of a diagnostic error',
       memoryBoundary: 'dedicated TypeScript worker V8 usedSize bytes after CPU profile collection; excludes native/external process memory',
       cpuProfileBoundary: `${profileRequests} sequential warm Diagnostic.getPerformanceTrace calls after cold readiness; CPU samples measure on-CPU time during those calls, not wall time`,
       coldTrials: true,
