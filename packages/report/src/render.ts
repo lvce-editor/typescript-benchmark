@@ -8,8 +8,12 @@ export interface ProfileAggregateRow extends ProfileRow {
 export interface ProfileBreakdown {
   readonly rows: readonly ProfileAggregateRow[]
   readonly trialCount: number
+  readonly totalSampleCount: number
   readonly sampleCount: number
+  readonly idleSampleCount: number
   readonly sampledCpuMs: number
+  readonly idleTimeMs: number
+  readonly profileWindowMs: number
   readonly warmRequests: number
   readonly downloads: readonly string[]
 }
@@ -67,13 +71,13 @@ export const renderPages = (data: BenchmarkData, profiles: ProfileBreakdown): { 
   const rpcChart = barChart('Synchronous RPC wall time · median by method', rpcNames,
     rpcNames.map((name) => median(traces.flatMap((trace) => (Number.isFinite(trace.syncRpc?.methods[name]?.durationMs) ? [trace.syncRpc!.methods[name]!.durationMs] : [])))), 'ms')
   const cpuRows = profiles.rows.slice(0, 10)
-  const cpuChart = barChart('Top sampled worker CPU self time · median percentage per trial',
+  const cpuChart = barChart('Top sampled active worker CPU self time · median percentage per trial',
     cpuRows.map((row) => `${row.functionName || '(anonymous)'} · ${row.url || '(native)'}`),
     cpuRows.map((row) => row.selfPercent), '%')
   const hotspot = cpuRows[0]
-    ? `<p>Highest sampled self-time contributor: ${escapeHtml(cpuRows[0].functionName || '(anonymous)')} in ${escapeHtml(cpuRows[0].url || '(native)')}, median ${cpuRows[0].selfTimeMs.toFixed(2)} ms (${cpuRows[0].selfPercent.toFixed(1)}% of sampled CPU per trial).</p>`
-    : '<p>No sampled CPU hotspots were available in the successful profiles.</p>'
+    ? `<p>Highest sampled active self-time contributor: ${escapeHtml(cpuRows[0].functionName || '(anonymous)')} in ${escapeHtml(cpuRows[0].url || '(native)')}, median ${cpuRows[0].selfTimeMs.toFixed(2)} ms (${cpuRows[0].selfPercent.toFixed(1)}% of sampled active time per trial).</p>`
+    : '<p>No active sampled CPU hotspots were available in the successful profiles.</p>'
   const downloads = profiles.downloads.map((name) => `<li><a href="cpu-profiles/${escapeHtml(name)}" download>${escapeHtml(name)}</a></li>`).join('')
-  const breakdown = shell('TypeScript worker CPU profile', `${stageChart}${rpcChart}${cpuChart}<section>${hotspot}<p>Stage and synchronous RPC values are wall time from the last warm diagnostic call; stages may be nested and are not summed. The CPU profile covers ${profiles.warmRequests} sequential warm calls per trial after cold readiness. Rows show median sampled on-CPU time and percentage per trial across ${profiles.trialCount} successful profiles, with median sample occurrences. Self time counts samples in the function itself; inclusive time also counts descendant samples, so inclusive rows overlap. Sampled CPU is neither wall time nor blocked time. The ${profiles.sampleCount} samples across these profiles represent ${profiles.sampledCpuMs.toFixed(2)} ms of sampled CPU.</p><p>Profiles with few samples provide only coarse evidence; function rankings can vary between runs.</p><p><a href="profiles.json" download>Download median profile summary</a></p><h2>Raw profiles</h2><ul>${downloads || '<li>No raw CPU profiles are available.</li>'}</ul><table><thead><tr><th>Function</th><th>Source location</th><th>Self CPU</th><th>Inclusive CPU</th><th>Samples · profiles</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No CPU samples were collected.</td></tr>'}</tbody></table>${metadata}`)
+  const breakdown = shell('TypeScript worker CPU profile', `${stageChart}${rpcChart}${cpuChart}<section>${hotspot}<p>Stage and synchronous RPC values are wall time from the last warm diagnostic call; stages may be nested and are not summed. The CPU profile covers ${profiles.warmRequests} sequential warm calls per trial after cold readiness. Function rows show median active sampled time and percentage per trial across ${profiles.trialCount} successful profiles, with median active sample occurrences. Self time counts samples in the function itself; inclusive time also counts descendant samples, so inclusive rows overlap. V8 (idle) samples are excluded from function rankings and active-time percentages: of ${profiles.totalSampleCount} samples, ${profiles.sampleCount} active samples represent ${profiles.sampledCpuMs.toFixed(2)} ms of sampled active time and ${profiles.idleSampleCount} idle samples span ${profiles.idleTimeMs.toFixed(2)} ms, within a ${profiles.profileWindowMs.toFixed(2)} ms profile window. CPU profile sampling is distinct from wall time and blocked time; compare with the diagnostic trace stages and RPC wall-time charts.</p><p>Profiles with few active samples provide only coarse evidence; function rankings can vary between runs.</p><p><a href="profiles.json" download>Download median profile summary</a></p><h2>Raw profiles</h2><ul>${downloads || '<li>No raw CPU profiles are available.</li>'}</ul><table><thead><tr><th>Function</th><th>Source location</th><th>Active self</th><th>Active inclusive</th><th>Samples · profiles</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No active CPU samples were collected.</td></tr>'}</tbody></table>${metadata}`)
   return { index, breakdown }
 }

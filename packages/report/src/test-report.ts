@@ -13,16 +13,18 @@ const pages = renderPages({
   },
   trials: [{ iteration: 1, success: false, readyMs: null, heapUsedBytes: null, processMemoryBytes: null, error: '<timeout>' }],
 }, {
-  rows: [], trialCount: 1, sampleCount: 0, sampledCpuMs: 0, warmRequests: 10,
+  rows: [], trialCount: 1, totalSampleCount: 0, sampleCount: 0, idleSampleCount: 0,
+  sampledCpuMs: 0, idleTimeMs: 0, profileWindowMs: 0, warmRequests: 10,
   downloads: ['cpu-profile-1.json'],
 })
 assert.match(pages.index, /unavailable/)
 assert.match(pages.index, /&lt;timeout&gt;/)
 assert.match(pages.index, /breakdown\.html/)
-assert.match(pages.breakdown, /No CPU samples were collected/)
+assert.match(pages.breakdown, /No active CPU samples were collected/)
 assert.match(pages.breakdown, /10 sequential warm calls per trial/)
 assert.match(pages.breakdown, /Raw profiles/)
 assert.match(pages.breakdown, /cpu-profiles\/cpu-profile-1\.json/)
+assert.match(pages.breakdown, /V8 \(idle\) samples are excluded/)
 const populated = renderPages({
   metadata: {
     node: 'v26.0.0', editor: { tag: 'v0.118.23', asset: 'editor.deb', sha256: 'abc123' },
@@ -35,10 +37,12 @@ const populated = renderPages({
     functionName: 'parse', url: 'typescript.js', lineNumber: 3, columnNumber: 0,
     selfTimeMs: 4, inclusiveTimeMs: 8, selfPercent: 40, inclusivePercent: 80, sampleCount: 2, trialCount: 1,
   }],
-  trialCount: 1, sampleCount: 5, sampledCpuMs: 10, warmRequests: 10, downloads: [],
+  trialCount: 1, totalSampleCount: 5, sampleCount: 4, idleSampleCount: 1,
+  sampledCpuMs: 10, idleTimeMs: 2, profileWindowMs: 12, warmRequests: 10, downloads: [],
 })
-assert.match(populated.breakdown, /Top sampled worker CPU self time/)
-assert.match(populated.breakdown, /Highest sampled self-time contributor: parse/)
+assert.match(populated.breakdown, /Top sampled active worker CPU self time/)
+assert.match(populated.breakdown, /Highest sampled active self-time contributor: parse/)
+assert.match(populated.breakdown, /4 active samples represent 10\.00 ms of sampled active time and 1 idle samples span 2\.00 ms/)
 assert.match(populated.breakdown, /4\.00 ms \(40\.0%\)/)
 assert.match(populated.breakdown, /8\.00 ms \(80\.0%\)/)
 const aggregatedRows = aggregateProfiles([

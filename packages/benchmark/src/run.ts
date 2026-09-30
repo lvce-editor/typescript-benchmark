@@ -114,15 +114,20 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     const profilePath = join(outputDir, `cpu-profile-${iteration}.json`)
     const profileSummaryPath = join(outputDir, `cpu-profile-${iteration}-summary.json`)
     await writeFile(profilePath, `${JSON.stringify(cpu.profile, null, 2)}\n`)
-    await writeFile(profileSummaryPath, `${JSON.stringify(summarizeProfile(cpu.profile), null, 2)}\n`)
+    const profileSummary = summarizeProfile(cpu.profile)
+    await writeFile(profileSummaryPath, `${JSON.stringify(profileSummary.rows, null, 2)}\n`)
     const memory = await worker.send<{ usedSize: number; totalSize: number }>('Runtime.getHeapUsage')
     if (!Number.isFinite(memory.usedSize) || memory.usedSize <= 0) throw new Error(`Invalid TypeScript worker heap reading: ${memory.usedSize}`)
     return {
       iteration, success: true, readyMs, heapUsedBytes: memory.usedSize, processMemoryBytes: null,
       workerUrl: target.url, profilePath: profilePath.replace(`${rootDir}/`, ''),
       featureTracePath: featureTracePath.replace(`${rootDir}/`, ''), featureTrace,
-      profileRequests, profileSampleCount: cpu.profile.samples.length,
-      profileSampledCpuMs: cpu.profile.timeDeltas.reduce((total, delta) => total + delta, 0) / 1000,
+      profileRequests, profileSampleCount: profileSummary.sampleCount,
+      profileActiveSampleCount: profileSummary.activeSampleCount,
+      profileIdleSampleCount: profileSummary.idleSampleCount,
+      profileActiveMs: profileSummary.activeMs,
+      profileIdleMs: profileSummary.idleMs,
+      profileWindowMs: profileSummary.profileWindowMs,
     }
   } catch (error) {
     return {

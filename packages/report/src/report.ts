@@ -29,8 +29,12 @@ const rawProfiles = await readdir(join(root, 'results')).then((files) => files.f
 const breakdown = {
   rows: profiles,
   trialCount: successfulProfileTrials.length,
-  sampleCount: successfulProfileTrials.reduce((total, trial) => total + (trial.profileSampleCount || 0), 0),
-  sampledCpuMs: successfulProfileTrials.reduce((total, trial) => total + (trial.profileSampledCpuMs || 0), 0),
+  totalSampleCount: successfulProfileTrials.reduce((total, trial) => total + (trial.profileSampleCount || 0), 0),
+  sampleCount: successfulProfileTrials.reduce((total, trial) => total + (trial.profileActiveSampleCount || 0), 0),
+  idleSampleCount: successfulProfileTrials.reduce((total, trial) => total + (trial.profileIdleSampleCount || 0), 0),
+  sampledCpuMs: successfulProfileTrials.reduce((total, trial) => total + (trial.profileActiveMs || 0), 0),
+  idleTimeMs: successfulProfileTrials.reduce((total, trial) => total + (trial.profileIdleMs || 0), 0),
+  profileWindowMs: successfulProfileTrials.reduce((total, trial) => total + (trial.profileWindowMs || 0), 0),
   warmRequests: successfulProfileTrials.length
     ? successfulProfileTrials.map((trial) => trial.profileRequests || 0).sort((a, b) => a - b)[Math.floor(successfulProfileTrials.length / 2)]!
     : 0,

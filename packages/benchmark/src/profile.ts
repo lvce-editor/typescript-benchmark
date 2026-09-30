@@ -1,6 +1,6 @@
-import type { CpuProfile, ProfileRow } from './types.ts'
+import type { CpuProfile, CpuProfileSummary, ProfileRow } from './types.ts'
 
-export const summarizeProfile = (profile: CpuProfile): ProfileRow[] => {
+export const summarizeProfile = (profile: CpuProfile): CpuProfileSummary => {
   if (!Array.isArray(profile.nodes) || !Array.isArray(profile.samples) || !Array.isArray(profile.timeDeltas) || profile.samples.length !== profile.timeDeltas.length) {
     throw new TypeError('Invalid Chromium CPU profile: expected nodes, samples, and matching timeDeltas')
   }
@@ -15,12 +15,22 @@ export const summarizeProfile = (profile: CpuProfile): ProfileRow[] => {
   }
   const totals = new Map<string, { row: ProfileRow; selfUs: number; inclusiveUs: number; sampleCount: number }>()
   let totalUs = 0
+  let activeUs = 0
+  let activeSamples = 0
+  let idleUs = 0
+  let idleSamples = 0
   for (let index = 0; index < profile.samples.length; index++) {
     const node = byId.get(profile.samples[index]!)
     const delta = profile.timeDeltas[index]!
     if (!node || !Number.isFinite(delta) || delta < 0) throw new TypeError('Invalid Chromium CPU profile sample')
     totalUs += delta
-    const { functionName, url, lineNumber = -1, columnNumber = -1 } = node.callFrame
+    if (node.callFrame.functionName === '(idle)') {
+      idleUs += delta
+      idleSamples++
+      continue
+    }
+    activeUs += delta
+    activeSamples++
     let current: number | undefined = node.id
     const ancestors = new Set<number>()
     while (current !== undefined) {
@@ -29,6 +39,10 @@ export const summarizeProfile = (profile: CpuProfile): ProfileRow[] => {
       const frame = byId.get(current)
       if (!frame) throw new TypeError('Invalid Chromium CPU profile node tree')
       const location = frame.callFrame
+      if (location.functionName === '(idle)') {
+        current = parents.get(current)
+        continue
+      }
       const ancestorKey = `${location.url}\0${location.functionName}\0${location.lineNumber ?? -1}\0${location.columnNumber ?? -1}`
       let entry = totals.get(ancestorKey)
       if (!entry) {
@@ -50,12 +64,21 @@ export const summarizeProfile = (profile: CpuProfile): ProfileRow[] => {
       current = parents.get(current)
     }
   }
-  return [...totals.values()].map(({ row, selfUs, inclusiveUs, sampleCount }) => ({
+  const rows = [...totals.values()].map(({ row, selfUs, inclusiveUs, sampleCount }) => ({
     ...row,
     selfTimeMs: selfUs / 1000,
     inclusiveTimeMs: inclusiveUs / 1000,
-    selfPercent: totalUs ? selfUs / totalUs * 100 : 0,
-    inclusivePercent: totalUs ? inclusiveUs / totalUs * 100 : 0,
+    selfPercent: activeUs ? selfUs / activeUs * 100 : 0,
+    inclusivePercent: activeUs ? inclusiveUs / activeUs * 100 : 0,
     sampleCount,
   })).sort((a, b) => b.selfTimeMs - a.selfTimeMs)
+  return {
+    rows,
+    sampleCount: profile.samples.length,
+    activeSampleCount: activeSamples,
+    idleSampleCount: idleSamples,
+    activeMs: activeUs / 1000,
+    idleMs: idleUs / 1000,
+    profileWindowMs: totalUs / 1000,
+  }
 }
