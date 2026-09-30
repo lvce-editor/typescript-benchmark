@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -17,7 +17,7 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const outputDir = resolve(process.env.BENCHMARK_OUTPUT || join(rootDir, 'results'))
 const setup = JSON.parse(await readFile(join(rootDir, '.tmp/setup.json'), 'utf8')) as {
   editor: { tag: string; asset: string; sha256: string }
-  extension: { repository: string; release: string; bundled: boolean }
+  extension: { repository: string; release: string; sha256: string; id: string; directory: string; overridesBundled: boolean }
   fixture: { repository: string; commit: string; file: string }
 }
 const args = process.argv.slice(2)
@@ -62,6 +62,10 @@ const runTrial = async (iteration: number): Promise<Trial> => {
   const profile = join(rootDir, '.tmp/profiles', `trial-${iteration}`)
   await rm(profile, { recursive: true, force: true })
   await mkdir(profile, { recursive: true })
+  const dataHome = join(profile, 'data')
+  const extensionInstallPath = join(dataHome, 'lvce-oss', 'extensions', setup.extension.id)
+  await mkdir(dirname(extensionInstallPath), { recursive: true })
+  await cp(setup.extension.directory, extensionInstallPath, { recursive: true })
   const launchedAt = performance.now()
   const appProcess = spawn(editorBinary, getEditorArgs(port, join(profile, 'user-data'), fixtureFile), {
     detached: true,
@@ -69,7 +73,7 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: join(profile, 'config'),
-      XDG_DATA_HOME: join(profile, 'data'),
+      XDG_DATA_HOME: dataHome,
       XDG_CACHE_HOME: join(profile, 'cache'),
       XDG_STATE_HOME: join(profile, 'state'),
     },
