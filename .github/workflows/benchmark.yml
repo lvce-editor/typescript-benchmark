@@ -1,0 +1,96 @@
+name: TypeScript language features benchmark
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: typescript-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  test:
+    name: test (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-26.04, windows-2025, macos-15, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - name: Compute node modules cache key
+        id: node-modules-cache-key
+        run: echo "value=$(sha256sum package-lock.json | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+        shell: bash
+      - uses: actions/cache@v6
+        id: node-modules-cache
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ runner.arch }}-node-modules-${{ steps.node-modules-cache-key.outputs.value }}
+      - run: npm ci
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+      - run: npm run type-check
+      - run: npm test
+      - run: npm run test:report
+  benchmark:
+    name: benchmark (ubuntu-26.04)
+    needs: test
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - name: Compute node modules cache key
+        id: node-modules-cache-key
+        run: echo "value=$(sha256sum package-lock.json | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+        shell: bash
+      - uses: actions/cache@v6
+        id: node-modules-cache
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ runner.arch }}-node-modules-${{ steps.node-modules-cache-key.outputs.value }}
+      - run: npm ci
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+      - run: npm run setup
+      - run: sudo apt-get install -y xvfb
+      - name: Run three fresh LVCE trials
+        run: xvfb-run -a npm run benchmark -- --iterations 3
+      - run: npm run report
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: typescript-benchmark-${{ github.run_id }}
+          path: |
+            results/
+            .tmp/setup.json
+            .tmp/pages/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 90
+      - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: .tmp/pages
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: benchmark
+    runs-on: ubuntu-26.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - uses: actions/deploy-pages@v4
+        id: deployment
