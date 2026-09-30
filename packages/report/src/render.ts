@@ -1,5 +1,6 @@
 import { aggregate } from '../../benchmark/src/aggregate.ts'
 import type { ProfileRow, Trial } from '../../benchmark/src/types.ts'
+import { formatFileSize, sortLoadedFiles } from './loadedFiles.ts'
 
 export interface ProfileAggregateRow extends ProfileRow {
   readonly trialCount: number
@@ -79,5 +80,16 @@ export const renderPages = (data: BenchmarkData, profiles: ProfileBreakdown): { 
     : '<p>No active sampled CPU hotspots were available in the successful profiles.</p>'
   const downloads = profiles.downloads.map((name) => `<li><a href="cpu-profiles/${escapeHtml(name)}" download>${escapeHtml(name)}</a></li>`).join('')
   const breakdown = shell('TypeScript worker CPU profile', `${stageChart}${rpcChart}${cpuChart}<section>${hotspot}<p>Stage and synchronous RPC values are wall time from the last warm diagnostic call; stages may be nested and are not summed. The CPU profile covers ${profiles.warmRequests} sequential warm calls per trial after cold readiness. Function rows show median active sampled time and percentage per trial across ${profiles.trialCount} successful profiles, with median active sample occurrences. Self time counts samples in the function itself; inclusive time also counts descendant samples, so inclusive rows overlap. V8 (idle) samples are excluded from function rankings and active-time percentages: of ${profiles.totalSampleCount} samples, ${profiles.sampleCount} active samples represent ${profiles.sampledCpuMs.toFixed(2)} ms of sampled active time and ${profiles.idleSampleCount} idle samples span ${profiles.idleTimeMs.toFixed(2)} ms, within a ${profiles.profileWindowMs.toFixed(2)} ms profile window. CPU profile sampling is distinct from wall time and blocked time; compare with the diagnostic trace stages and RPC wall-time charts.</p><p>Profiles with few active samples provide only coarse evidence; function rankings can vary between runs.</p><p><a href="profiles.json" download>Download median profile summary</a></p><h2>Raw profiles</h2><ul>${downloads || '<li>No raw CPU profiles are available.</li>'}</ul><table><thead><tr><th>Function</th><th>Source location</th><th>Active self</th><th>Active inclusive</th><th>Samples · profiles</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No active CPU samples were collected.</td></tr>'}</tbody></table>${metadata}`)
-  return { index, breakdown }
+  const loadedFiles = sortLoadedFiles(traces[0]?.loadedFiles || [])
+  const maxFileSize = Math.max(1, loadedFiles[0]?.sizeBytes || 0)
+  const loadedFileRows = loadedFiles.map((file) => {
+    const width = Math.max(1, file.sizeBytes / maxFileSize * 100)
+    return `<div class="metric"><div class="metric-label"><span>${escapeHtml(file.fileName)}</span><strong>${escapeHtml(formatFileSize(file.sizeBytes))}</strong></div><div class="track"><span style="width:${width}%"></span></div></div>`
+  }).join('')
+  const loadedFilesMessage = traces[0]?.loadedFiles === undefined
+    ? 'Loaded-file metadata was not recorded in this trace.'
+    : 'No files were loaded into the TypeScript compiler program.'
+  const loadedFilesCount = traces[0]?.loadedFiles === undefined ? 'file count unavailable' : `${loadedFiles.length} distinct files`
+  const loadedFilesChart = `<section><h2>TypeScript language-service files · ${loadedFilesCount}</h2><p>Files in the TypeScript compiler program after semantic diagnostics during the first successful cold trial, ordered by UTF-8 source-text size. This includes loaded declaration libraries, including cached TypeScript libraries. Files only discovered while resolving the project are not counted until loaded into the program.</p>${loadedFileRows || `<p>${loadedFilesMessage}</p>`}</section>`
+  return { index, breakdown: breakdown.replace('<section class="meta">', `${loadedFilesChart}<section class="meta">`) }
 }

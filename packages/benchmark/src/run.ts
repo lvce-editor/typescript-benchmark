@@ -17,7 +17,7 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const outputDir = resolve(process.env.BENCHMARK_OUTPUT || join(rootDir, 'results'))
 const setup = JSON.parse(await readFile(join(rootDir, '.tmp/setup.json'), 'utf8')) as {
   editor: { tag: string; asset: string; sha256: string }
-  extension: { repository: string; release: string }
+  extension: { repository: string; release: string; bundled: boolean }
   fixture: { repository: string; commit: string; file: string }
 }
 const args = process.argv.slice(2)
@@ -97,7 +97,8 @@ const runTrial = async (iteration: number): Promise<Trial> => {
       uri: pathToFileURL(fixtureFile).href,
       text: await readFile(fixtureFile, 'utf8'),
     }
-    await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    const initialTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    if (!initialTrace.loadedFiles?.length) throw new Error('The installed TypeScript extension did not report loaded files')
     const readyMs = performance.now() - launchedAt
     await worker.send('Profiler.enable')
     await worker.send('Profiler.start')
@@ -106,6 +107,7 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     for (let request = 1; request < profileRequests; request++) {
       featureTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
     }
+    featureTrace = { ...featureTrace, loadedFiles: initialTrace.loadedFiles }
     const featureTracePath = join(outputDir, `feature-trace-${iteration}.json`)
     await writeFile(featureTracePath, `${JSON.stringify(featureTrace, null, 2)}\n`)
 

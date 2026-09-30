@@ -7,12 +7,10 @@ import { spawnSync } from 'node:child_process'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const cache = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(root, '.tmp/cache'))
 const resultPath = join(root, '.tmp/setup.json')
-const editorTag = 'v0.118.23'
-const extensionRelease = 'v5.23.0'
-const extensionAsset = 'language-features-typescript-v5.23.0.tar.br'
-const extensionSha256 = '3187e2256fca023c58813a1ca3f6553fb1ba2d5cd707eb495a1ad1a33047a996'
+const editorTag = 'v0.119.1'
+const extensionRelease = 'v5.25.2'
 const editorAsset = `lvce-${editorTag}_amd64.deb`
-const editorSha256 = '208d760d9d7f99cc6590732b677d3b4206145d5a911d00ea036a044abe72a3c7'
+const editorSha256 = 'e1496f4e637a755034375a137a597ce6552ed5b1c895b8a2cd9cacd2e2b1fcbe'
 const aboutViewCommit = '15fe112cf4b82ab72eaa6d29589aede9e53d96d4'
 const aboutViewUrl = 'https://github.com/lvce-editor/about-view.git'
 const fixtureRoot = join(cache, 'about-view')
@@ -37,22 +35,6 @@ const deb = Buffer.from(await response.arrayBuffer())
 const actualDigest = createHash('sha256').update(deb).digest('hex')
 if (actualDigest !== editorSha256) throw new Error(`LVCE Editor checksum mismatch: expected ${editorSha256}, received ${actualDigest}`)
 await writeFile(debPath, deb)
-const extensionReleaseResponse = await fetch(`https://api.github.com/repos/lvce-editor/language-features-typescript/releases/tags/${extensionRelease}`, {
-  headers: { accept: 'application/vnd.github+json', 'user-agent': 'typescript-benchmark' },
-})
-if (!extensionReleaseResponse.ok) throw new Error(`Unable to verify TypeScript extension release ${extensionRelease}: HTTP ${extensionReleaseResponse.status}`)
-const extensionReleaseData = await extensionReleaseResponse.json() as {
-  readonly html_url: string
-  readonly published_at: string
-  readonly target_commitish: string
-  readonly assets: readonly { readonly name: string; readonly digest: string | null }[]
-}
-const publishedExtensionAsset = extensionReleaseData.assets.find((asset) => asset.name === extensionAsset)
-if (!publishedExtensionAsset) throw new Error(`TypeScript extension release ${extensionRelease} is missing ${extensionAsset}`)
-if (publishedExtensionAsset.digest !== `sha256:${extensionSha256}`) {
-  throw new Error(`TypeScript extension checksum mismatch: expected ${extensionSha256}, received ${publishedExtensionAsset.digest}`)
-}
-
 if (process.platform !== 'linux') throw new Error('The official LVCE Debian benchmark setup requires Linux')
 run('sudo', ['apt-get', 'update'], { stdio: 'inherit' })
 run('sudo', ['apt-get', 'install', '-y', debPath], { stdio: 'inherit' })
@@ -75,14 +57,10 @@ const metadata = {
   extension: {
     repository: 'https://github.com/lvce-editor/language-features-typescript',
     release: extensionRelease,
-    asset: extensionAsset,
-    sha256: extensionSha256,
-    releaseUrl: extensionReleaseData.html_url,
-    publishedAt: extensionReleaseData.published_at,
-    sourceCommit: extensionReleaseData.target_commitish,
+    bundled: true,
   },
   fixture: { repository: aboutViewUrl, commit: fixtureRevision, file: 'packages/about-view/src/aboutWorkerMain.ts' },
 }
 await mkdir(dirname(resultPath), { recursive: true })
 await writeFile(resultPath, `${JSON.stringify(metadata, null, 2)}\n`)
-console.log(`Installed LVCE Editor ${editorTag}; fixture ${fixtureRevision}:${metadata.fixture.file}`)
+console.log(`Installed LVCE Editor ${editorTag} with TypeScript extension ${extensionRelease}; fixture ${fixtureRevision}:${metadata.fixture.file}`)

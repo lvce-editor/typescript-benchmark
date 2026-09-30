@@ -52,7 +52,10 @@ export const requestPerformanceTrace = async (
   if (!trace || trace.schemaVersion !== 1 || trace.fresh !== true) {
     throw new Error('TypeScript worker returned an invalid performance trace')
   }
-  if (trace.error) throw new Error(`TypeScript diagnostics failed at ${trace.error.stage}: ${trace.error.details.message}`)
+  if (trace.error) {
+    const stack = trace.error.details.stack ? `\n${trace.error.details.stack}` : ''
+    throw new Error(`TypeScript diagnostics failed at ${trace.error.stage}: ${trace.error.details.message}${stack}`)
+  }
   if (trace.file.uri && !trace.file.uri.endsWith(expectedFile)) {
     throw new Error(`TypeScript trace targeted ${trace.file.uri}; expected ${expectedFile}`)
   }
