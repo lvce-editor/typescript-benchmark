@@ -7,6 +7,7 @@ import { findTypeScriptWorker } from '../src/findTypeScriptWorker.ts'
 import { TargetSession } from '../src/targetSession.ts'
 import { waitFor } from '../src/waitFor.ts'
 import { getEditorArgs } from '../src/editorArgs.ts'
+import { formatFileSize, sortLoadedFiles } from '../../report/src/loadedFiles.ts'
 
 test('aggregates successful trial medians and leaves failures visible', () => {
   const result = aggregate([
@@ -91,4 +92,20 @@ test('launches LVCE in wait mode so shutdown reaches the Electron process', () =
     '--wait', '--no-sandbox', '--disable-gpu', '--remote-debugging-port=9222', '--user-data-dir=/tmp/lvce-profile',
     '/workspace/aboutWorkerMain.ts',
   ])
+})
+
+test('deduplicates loaded files and sorts by descending UTF-8 byte size with stable path ties', () => {
+  assert.deepEqual(sortLoadedFiles([
+    { fileName: '/z.d.ts', sizeBytes: 4 },
+    { fileName: '/b.d.ts', sizeBytes: 8 },
+    { fileName: '/a.d.ts', sizeBytes: 8 },
+    { fileName: '/z.d.ts', sizeBytes: 4 },
+  ]), [
+    { fileName: '/a.d.ts', sizeBytes: 8 },
+    { fileName: '/b.d.ts', sizeBytes: 8 },
+    { fileName: '/z.d.ts', sizeBytes: 4 },
+  ])
+  assert.deepEqual(sortLoadedFiles([]), [])
+  assert.equal(formatFileSize(0), '0 B')
+  assert.equal(formatFileSize(1536), '1.5 KiB (1536 B)')
 })

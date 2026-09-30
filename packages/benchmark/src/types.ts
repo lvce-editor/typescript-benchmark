@@ -25,8 +25,14 @@ export interface TypeScriptTrace {
   readonly totalDurationMs: number
   readonly commandDurationMs?: number
   readonly error?: { readonly stage: string; readonly details: { readonly message: string } }
+  readonly loadedFiles?: readonly LoadedFile[]
   readonly stages?: Readonly<Record<string, { readonly durationMs: number }>>
   readonly syncRpc?: { readonly callCount: number; readonly durationMs: number; readonly methods: Readonly<Record<string, { readonly callCount: number; readonly durationMs: number }>> }
+}
+
+export interface LoadedFile {
+  readonly fileName: string
+  readonly sizeBytes: number
 }
 
 export interface CpuProfile {

@@ -97,7 +97,7 @@ const runTrial = async (iteration: number): Promise<Trial> => {
       uri: pathToFileURL(fixtureFile).href,
       text: await readFile(fixtureFile, 'utf8'),
     }
-    await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+    const initialTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
     const readyMs = performance.now() - launchedAt
     await worker.send('Profiler.enable')
     await worker.send('Profiler.start')
@@ -106,6 +106,7 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     for (let request = 1; request < profileRequests; request++) {
       featureTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
     }
+    featureTrace = { ...featureTrace, loadedFiles: initialTrace.loadedFiles }
     const featureTracePath = join(outputDir, `feature-trace-${iteration}.json`)
     await writeFile(featureTracePath, `${JSON.stringify(featureTrace, null, 2)}\n`)
 
