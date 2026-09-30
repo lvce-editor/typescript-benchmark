@@ -16,7 +16,7 @@ import { waitFor } from './waitFor.ts'
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const outputDir = resolve(process.env.BENCHMARK_OUTPUT || join(rootDir, 'results'))
 const setup = JSON.parse(await readFile(join(rootDir, '.tmp/setup.json'), 'utf8')) as {
-  editor: { tag: string; asset: string; sha256: string; dataDirectoryName: string }
+  editor: { tag: string; asset: string; sha256: string; dataDirectoryName: string; binary: string }
   extension: { repository: string; release: string; sha256: string; id: string; directory: string; overridesBundled: boolean }
   fixture: { repository: string; commit: string; file: string }
 }
@@ -30,7 +30,7 @@ const timeoutMs = Math.max(10000, Number(getOption('--timeout-ms', '300000')) ||
 const cacheDir = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(rootDir, '.tmp/cache'))
 const fixtureWorkspace = join(cacheDir, 'about-view')
 const fixtureFile = join(fixtureWorkspace, setup.fixture.file)
-const editorBinary = process.env.LVCE_EDITOR_BIN || 'lvce'
+const editorBinary = process.env.LVCE_EDITOR_BIN || setup.editor.binary
 const profileRequests = 10
 const trials: Trial[] = []
 

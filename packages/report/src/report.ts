@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { BenchmarkData } from './render.ts'
+import { renderComparison, type ComparisonData } from './comparison.ts'
 import { renderPages } from './render.ts'
 import { aggregateProfiles } from './profiles.ts'
 import type { ProfileRow } from '../../benchmark/src/types.ts'
@@ -53,3 +54,7 @@ for (const file of rawTraces) await cp(join(root, 'results', file), join(output,
 const coldTraces = await readdir(join(root, 'results')).then((files) => files.filter((file) => /^cold-trace-\d+\.json$/.test(file)))
 for (const file of coldTraces) await cp(join(root, 'results', file), join(output, file))
 console.log(`Rendered benchmark pages at ${output}`)
+
+const comparison: ComparisonData = JSON.parse(await readFile(join(root, 'results/comparison.json'), 'utf8'))
+await writeFile(join(output, 'comparison.html'), renderComparison(comparison))
+await cp(join(root, 'results/comparison.json'), join(output, 'comparison.json'))

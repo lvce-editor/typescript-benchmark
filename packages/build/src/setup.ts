@@ -44,8 +44,10 @@ const actualDigest = createHash('sha256').update(deb).digest('hex')
 if (actualDigest !== editorSha256) throw new Error(`LVCE Editor checksum mismatch: expected ${editorSha256}, received ${actualDigest}`)
 await writeFile(debPath, deb)
 if (process.platform !== 'linux') throw new Error('The official LVCE Debian benchmark setup requires Linux')
-run('sudo', ['apt-get', 'update'], { stdio: 'inherit' })
-run('sudo', ['apt-get', 'install', '-y', debPath], { stdio: 'inherit' })
+const editorDirectory = join(cache, 'lvce-extracted')
+await mkdir(editorDirectory, { recursive: true })
+run('dpkg-deb', ['-x', debPath, editorDirectory])
+const editorBinary = join(editorDirectory, 'usr/lib/lvce/lvce')
 
 const extensionResponse = await fetch(`https://github.com/lvce-editor/language-features-typescript/releases/download/${extensionRelease}/${extensionAsset}`, {
   headers: { 'user-agent': 'typescript-benchmark' },
@@ -79,8 +81,9 @@ if (fixtureRevision !== aboutViewCommit) throw new Error(`Unexpected about-view 
 await readFile(fixtureFile)
 run('npm', ['ci', '--ignore-scripts'], { cwd: fixtureRoot, stdio: 'inherit' })
 
+const typescriptManifest = JSON.parse(await readFile(join(extensionDirectory, 'typescript/package.json'), 'utf8'))
 const metadata = {
-  editor: { tag: editorTag, asset: editorAsset, sha256: actualDigest, dataDirectoryName: editorDataDirectoryName },
+  editor: { tag: editorTag, asset: editorAsset, sha256: actualDigest, dataDirectoryName: editorDataDirectoryName, binary: editorBinary },
   extension: {
     repository: 'https://github.com/lvce-editor/language-features-typescript',
     release: extensionRelease,
@@ -89,9 +92,10 @@ const metadata = {
     id: extensionId,
     directory: extensionDirectory,
     overridesBundled: true,
+    typescript: typescriptManifest.version,
   },
   fixture: { repository: aboutViewUrl, commit: fixtureRevision, file: 'packages/about-view/src/aboutWorkerMain.ts' },
 }
 await mkdir(dirname(resultPath), { recursive: true })
 await writeFile(resultPath, `${JSON.stringify(metadata, null, 2)}\n`)
-console.log(`Installed LVCE Editor ${editorTag} with TypeScript extension ${extensionRelease}; fixture ${fixtureRevision}:${metadata.fixture.file}`)
+console.log(`Extracted LVCE Editor ${editorTag} with TypeScript extension ${extensionRelease}; fixture ${fixtureRevision}:${metadata.fixture.file}`)
