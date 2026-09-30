@@ -189,7 +189,7 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
     metadata: {
       node: process.version, platform: process.platform, architecture: process.arch,
       editor: setup.editor, extension: setup.extension, fixture: setup.fixture,
-      readyBoundary: 'Diagnostic.getPerformanceTrace returned a fresh cold diagnostic trace for the pinned about-view TypeScript file; stopwatch starts immediately before launching LVCE and ends after validating the document URI and absence of a diagnostic error',
+      readyBoundary: 'Diagnostic.getFirstPerformanceTrace returned the first cold diagnostic trace for the pinned about-view TypeScript file; stopwatch starts immediately before launching LVCE and ends after validating the document URI and absence of a diagnostic error',
       memoryBoundary: 'dedicated TypeScript worker V8 usedSize bytes after CPU profile collection; excludes native/external process memory',
       cpuProfileBoundary: `${profileRequests} sequential warm Diagnostic.getPerformanceTrace calls after cold readiness; CPU samples measure on-CPU time during those calls, not wall time`,
       coldTrials: true,
