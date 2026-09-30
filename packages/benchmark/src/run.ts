@@ -29,7 +29,7 @@ const timeoutMs = Math.max(10000, Number(getOption('--timeout-ms', '90000')) || 
 const cacheDir = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(rootDir, '.tmp/cache'))
 const fixtureWorkspace = join(cacheDir, 'about-view')
 const fixtureFile = join(fixtureWorkspace, setup.fixture.file)
-const editorBinary = process.env.LVCE_EDITOR_BIN || 'lvce-editor'
+const editorBinary = process.env.LVCE_EDITOR_BIN || 'lvce'
 const trials: Trial[] = []
 
 const availablePort = async (): Promise<number> => {
