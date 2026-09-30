@@ -8,6 +8,9 @@ export interface Trial {
   readonly profilePath?: string
   readonly featureTracePath?: string
   readonly featureTrace?: TypeScriptTrace
+  readonly profileRequests?: number
+  readonly profileSampleCount?: number
+  readonly profileSampledCpuMs?: number
   readonly error?: string
 }
 
@@ -23,15 +26,21 @@ export interface TypeScriptTrace {
 }
 
 export interface CpuProfile {
-  readonly nodes: readonly { readonly id: number; readonly callFrame: { readonly functionName: string; readonly url: string }; readonly children?: readonly number[] }[]
-  readonly samples?: readonly number[]
-  readonly timeDeltas?: readonly number[]
+  readonly nodes: readonly { readonly id: number; readonly callFrame: { readonly functionName: string; readonly url: string; readonly lineNumber?: number; readonly columnNumber?: number }; readonly children?: readonly number[] }[]
+  readonly samples: readonly number[]
+  readonly timeDeltas: readonly number[]
 }
 
 export interface ProfileRow {
   readonly functionName: string
   readonly url: string
+  readonly lineNumber: number
+  readonly columnNumber: number
   readonly selfTimeMs: number
+  readonly inclusiveTimeMs: number
+  readonly selfPercent: number
+  readonly inclusivePercent: number
+  readonly sampleCount: number
 }
 
 export interface TargetInfo {

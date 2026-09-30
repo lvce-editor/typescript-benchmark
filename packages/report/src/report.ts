@@ -3,21 +3,45 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { BenchmarkData } from './render.ts'
 import { renderPages } from './render.ts'
+import { aggregateProfiles } from './profiles.ts'
 import type { ProfileRow } from '../../benchmark/src/types.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const output = resolve(process.env.PAGES_OUTPUT || join(root, '.tmp/pages'))
 const data = JSON.parse(await readFile(join(root, 'results/trials.json'), 'utf8')) as BenchmarkData
 const summaries = await readdir(join(root, 'results')).then((files) => files.filter((file) => /^cpu-profile-\d+-summary\.json$/.test(file)))
-const profiles = (await Promise.all(summaries.map(async (file) => JSON.parse(await readFile(join(root, 'results', file), 'utf8')) as ProfileRow[]))).flat()
-profiles.sort((a, b) => b.selfTimeMs - a.selfTimeMs)
-const pages = renderPages(data, profiles)
+const successfulTrials = new Map(data.trials.filter((trial) => trial.success).map((trial) => [trial.iteration, trial]))
+const profileTrials = await Promise.all(summaries.map(async (file) => {
+  const iteration = Number(file.match(/^cpu-profile-(\d+)-summary\.json$/)?.[1])
+  if (!successfulTrials.has(iteration)) return undefined
+  return {
+    iteration,
+    rows: JSON.parse(await readFile(join(root, 'results', file), 'utf8')) as ProfileRow[],
+  }
+}))
+const profiles = aggregateProfiles(profileTrials.filter((trial): trial is NonNullable<typeof trial> => Boolean(trial)))
+const successfulProfileTrials = [...successfulTrials.values()].filter((trial) => trial.profileSampleCount !== undefined)
+const profileIterations = new Set(successfulProfileTrials.map((trial) => trial.iteration))
+const rawProfiles = await readdir(join(root, 'results')).then((files) => files.filter((file) => {
+  const iteration = Number(file.match(/^cpu-profile-(\d+)\.json$/)?.[1])
+  return profileIterations.has(iteration)
+}))
+const breakdown = {
+  rows: profiles,
+  trialCount: successfulProfileTrials.length,
+  sampleCount: successfulProfileTrials.reduce((total, trial) => total + (trial.profileSampleCount || 0), 0),
+  sampledCpuMs: successfulProfileTrials.reduce((total, trial) => total + (trial.profileSampledCpuMs || 0), 0),
+  warmRequests: successfulProfileTrials.length
+    ? successfulProfileTrials.map((trial) => trial.profileRequests || 0).sort((a, b) => a - b)[Math.floor(successfulProfileTrials.length / 2)]!
+    : 0,
+  downloads: rawProfiles,
+}
+const pages = renderPages(data, breakdown)
 await mkdir(output, { recursive: true })
 await writeFile(join(output, 'index.html'), pages.index)
 await writeFile(join(output, 'breakdown.html'), pages.breakdown)
 await cp(join(root, 'results/trials.json'), join(output, 'trials.json'))
-await writeFile(join(output, 'profiles.json'), `${JSON.stringify(profiles, null, 2)}\n`)
-const rawProfiles = await readdir(join(root, 'results')).then((files) => files.filter((file) => /^cpu-profile-\d+\.json$/.test(file)))
+await writeFile(join(output, 'profiles.json'), `${JSON.stringify(breakdown, null, 2)}\n`)
 await mkdir(join(output, 'cpu-profiles'), { recursive: true })
 for (const file of rawProfiles) await cp(join(root, 'results', file), join(output, 'cpu-profiles', basename(file)))
 const rawTraces = await readdir(join(root, 'results')).then((files) => files.filter((file) => /^feature-trace-\d+\.json$/.test(file)))

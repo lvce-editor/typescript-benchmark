@@ -1,6 +1,19 @@
 import { aggregate } from '../../benchmark/src/aggregate.ts'
 import type { ProfileRow, Trial } from '../../benchmark/src/types.ts'
 
+export interface ProfileAggregateRow extends ProfileRow {
+  readonly trialCount: number
+}
+
+export interface ProfileBreakdown {
+  readonly rows: readonly ProfileAggregateRow[]
+  readonly trialCount: number
+  readonly sampleCount: number
+  readonly sampledCpuMs: number
+  readonly warmRequests: number
+  readonly downloads: readonly string[]
+}
+
 export interface BenchmarkData {
   readonly metadata: {
     readonly node: string
@@ -29,14 +42,17 @@ const shell = (title: string, content: string): string => `<!doctype html>
 <style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:40px auto;padding:0 20px;color:#17212b;background:#f7f9fb}h1{font-size:2rem}h2{font-size:1.25rem}.nav a{margin-right:18px}.card,section{background:white;border:1px solid #dce3ea;border-radius:8px;padding:18px;margin:18px 0}.metric{margin:14px 0}.metric-label{display:flex;justify-content:space-between;gap:12px}.track{height:12px;background:#e7edf3;border-radius:6px;overflow:hidden;margin-top:6px}.track span{display:block;height:100%;background:#2276b8}.failure{color:#9c2630;white-space:pre-wrap;font-family:monospace}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #dce3ea;padding:8px;overflow-wrap:anywhere}.meta{font-size:.9rem;color:#455565}</style>
 <body><h1>${escapeHtml(title)}</h1><nav class="nav"><a href="index.html">Readiness and memory</a><a href="breakdown.html">CPU breakdown</a><a href="trials.json" download>Raw trials</a></nav>${content}</body></html>`
 
-export const renderPages = (data: BenchmarkData, profiles: readonly ProfileRow[]): { index: string; breakdown: string } => {
+export const renderPages = (data: BenchmarkData, profiles: ProfileBreakdown): { index: string; breakdown: string } => {
   const summary = aggregate(data.trials)
   const readiness = barChart('TypeScript worker startup responsiveness', ['median over successful cold trials'], [summary.readyMedianMs], 'ms')
   const memory = barChart('TypeScript worker JavaScript heap', ['median V8 used heap'], [summary.heapMedianBytes === null ? null : summary.heapMedianBytes / 1024 / 1024], 'MiB')
   const failures = data.trials.filter((trial) => !trial.success).map((trial) => `<li class="failure">${escapeHtml(`Trial ${trial.iteration}: ${trial.error || 'unknown failure'}`)}</li>`).join('')
   const metadata = `<section class="meta"><p>Editor ${escapeHtml(data.metadata.editor.tag)} (${escapeHtml(data.metadata.editor.sha256)})</p><p>TypeScript extension release ${escapeHtml(data.metadata.extension?.release || 'not separately reported')} ${escapeHtml(data.metadata.extension?.sourceCommit || '')}</p><p>Fixture ${escapeHtml(data.metadata.fixture.commit)} · ${escapeHtml(data.metadata.fixture.file)}</p><p>Node ${escapeHtml(data.metadata.node)} · ${summary.successfulTrials}/${summary.trials} trials succeeded</p><p>Readiness boundary: ${escapeHtml(data.metadata.readyBoundary)}</p><p>Memory boundary: ${escapeHtml(data.metadata.memoryBoundary)}</p><p>V8 worker heap excludes native and external memory; it is not total extension process RSS.</p></section>`
   const index = shell('TypeScript language feature benchmark', `${readiness}${memory}${metadata}<section><h2>Trial failures</h2>${failures || '<p>None</p>'}</section>`)
-  const rows = profiles.slice(0, 60).map((row) => `<tr><td>${escapeHtml(row.functionName || '(anonymous)')}</td><td>${escapeHtml(row.url || '(native)')}</td><td>${row.selfTimeMs.toFixed(2)} ms</td></tr>`).join('')
+  const rows = profiles.rows.slice(0, 60).map((row) => {
+    const location = row.lineNumber >= 0 ? `:${row.lineNumber + 1}:${row.columnNumber >= 0 ? row.columnNumber + 1 : 1}` : ''
+    return `<tr><td>${escapeHtml(row.functionName || '(anonymous)')}</td><td>${escapeHtml(`${row.url || '(native)'}${location}`)}</td><td>${row.selfTimeMs.toFixed(2)} ms (${row.selfPercent.toFixed(1)}%)</td><td>${row.inclusiveTimeMs.toFixed(2)} ms (${row.inclusivePercent.toFixed(1)}%)</td><td>${row.sampleCount} · ${row.trialCount}</td></tr>`
+  }).join('')
   const traces = data.trials.flatMap((trial) => (trial.success && trial.featureTrace ? [trial.featureTrace] : []))
   const median = (values: number[]): number | null => {
     if (!values.length) return null
@@ -50,6 +66,14 @@ export const renderPages = (data: BenchmarkData, profiles: readonly ProfileRow[]
   const rpcNames = [...new Set(traces.flatMap((trace) => Object.keys(trace.syncRpc?.methods || {})))].sort()
   const rpcChart = barChart('Synchronous RPC wall time · median by method', rpcNames,
     rpcNames.map((name) => median(traces.flatMap((trace) => (Number.isFinite(trace.syncRpc?.methods[name]?.durationMs) ? [trace.syncRpc!.methods[name]!.durationMs] : [])))), 'ms')
-  const breakdown = shell('TypeScript worker CPU profile', `${stageChart}${rpcChart}<section><p>The extension reports stage and synchronous RPC wall times. Stages may be nested; each is shown independently and values are not summed. The Chromium profile table shows sampled worker CPU self time, not blocked wall time.</p><p><a href="profiles.json" download>Download merged profile summary</a></p><table><thead><tr><th>Function</th><th>Source URL</th><th>Sampled self time</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No CPU samples were collected.</td></tr>'}</tbody></table>${metadata}`)
+  const cpuRows = profiles.rows.slice(0, 10)
+  const cpuChart = barChart('Top sampled worker CPU self time · median percentage per trial',
+    cpuRows.map((row) => `${row.functionName || '(anonymous)'} · ${row.url || '(native)'}`),
+    cpuRows.map((row) => row.selfPercent), '%')
+  const hotspot = cpuRows[0]
+    ? `<p>Highest sampled self-time contributor: ${escapeHtml(cpuRows[0].functionName || '(anonymous)')} in ${escapeHtml(cpuRows[0].url || '(native)')}, median ${cpuRows[0].selfTimeMs.toFixed(2)} ms (${cpuRows[0].selfPercent.toFixed(1)}% of sampled CPU per trial).</p>`
+    : '<p>No sampled CPU hotspots were available in the successful profiles.</p>'
+  const downloads = profiles.downloads.map((name) => `<li><a href="cpu-profiles/${escapeHtml(name)}" download>${escapeHtml(name)}</a></li>`).join('')
+  const breakdown = shell('TypeScript worker CPU profile', `${stageChart}${rpcChart}${cpuChart}<section>${hotspot}<p>Stage and synchronous RPC values are wall time from the last warm diagnostic call; stages may be nested and are not summed. The CPU profile covers ${profiles.warmRequests} sequential warm calls per trial after cold readiness. Rows show median sampled on-CPU time and percentage per trial across ${profiles.trialCount} successful profiles, with median sample occurrences. Self time counts samples in the function itself; inclusive time also counts descendant samples, so inclusive rows overlap. Sampled CPU is neither wall time nor blocked time. The ${profiles.sampleCount} samples across these profiles represent ${profiles.sampledCpuMs.toFixed(2)} ms of sampled CPU.</p><p>Profiles with few samples provide only coarse evidence; function rankings can vary between runs.</p><p><a href="profiles.json" download>Download median profile summary</a></p><h2>Raw profiles</h2><ul>${downloads || '<li>No raw CPU profiles are available.</li>'}</ul><table><thead><tr><th>Function</th><th>Source location</th><th>Self CPU</th><th>Inclusive CPU</th><th>Samples · profiles</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No CPU samples were collected.</td></tr>'}</tbody></table>${metadata}`)
   return { index, breakdown }
 }

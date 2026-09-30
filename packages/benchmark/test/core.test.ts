@@ -24,14 +24,36 @@ test('waitFor rejects when its readiness condition never appears', async () => {
   await assert.rejects(waitFor(async () => undefined, 1, 1), /Timed out/)
 })
 
-test('summarizes CPU profile sample self time by function and validates its payload', () => {
+test('summarizes self and inclusive CPU samples by source location', () => {
   const rows = summarizeProfile({
-    nodes: [{ id: 1, callFrame: { functionName: 'parse', url: 'typescript.js' } }],
-    samples: [1, 1],
-    timeDeltas: [1000, 2500],
+    nodes: [
+      { id: 1, callFrame: { functionName: '(root)', url: '' }, children: [2] },
+      { id: 2, callFrame: { functionName: 'parse', url: 'typescript.js', lineNumber: 10, columnNumber: 3 }, children: [3] },
+      { id: 3, callFrame: { functionName: 'tokenize', url: 'typescript.js', lineNumber: 20, columnNumber: 7 } },
+    ],
+    samples: [3, 2, 3],
+    timeDeltas: [1000, 2000, 3000],
   })
-  assert.equal(rows[0]?.selfTimeMs, 3.5)
+  assert.deepEqual(rows[0], {
+    functionName: 'tokenize', url: 'typescript.js', lineNumber: 20, columnNumber: 7,
+    selfTimeMs: 4, inclusiveTimeMs: 4, selfPercent: 4000 / 6 / 10, inclusivePercent: 4000 / 6 / 10, sampleCount: 2,
+  })
+  const parse = rows.find((row) => row.functionName === 'parse')
+  assert.equal(parse?.selfTimeMs, 2)
+  assert.equal(parse?.inclusiveTimeMs, 6)
+  assert.equal(parse?.selfPercent, 2000 / 6 / 10)
+  assert.equal(parse?.inclusivePercent, 100)
+})
+
+test('accepts an empty CPU profile and rejects malformed profile trees or samples', () => {
+  assert.deepEqual(summarizeProfile({ nodes: [], samples: [], timeDeltas: [] }), [])
   assert.throws(() => summarizeProfile({ nodes: [], samples: [1], timeDeltas: [] }), /Invalid Chromium CPU profile/)
+  assert.throws(() => summarizeProfile({
+    nodes: [{ id: 1, callFrame: { functionName: 'a', url: '' }, children: [2] }], samples: [], timeDeltas: [],
+  }), /Invalid Chromium CPU profile node tree/)
+  assert.throws(() => summarizeProfile({
+    nodes: [{ id: 1, callFrame: { functionName: 'a', url: '' } }], samples: [2], timeDeltas: [1000],
+  }), /Invalid Chromium CPU profile sample/)
 })
 
 test('parses a nested performance trace and rejects non-trace editor contents', () => {
