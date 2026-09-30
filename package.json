@@ -1,0 +1,25 @@
+{
+  "name": "typescript-benchmark",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "node packages/build/src/setup.ts",
+    "benchmark": "node packages/benchmark/src/run.ts",
+    "report": "node packages/report/src/report.ts",
+    "test": "node --test packages/benchmark/test/core.test.ts",
+    "type-check": "tsc --noEmit",
+    "test:report": "node packages/report/src/test-report.ts"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.1",
+    "playwright": "1.57.0",
+    "typescript": "6.0.3"
+  }
+}

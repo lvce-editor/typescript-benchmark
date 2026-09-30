@@ -1,0 +1,5 @@
+{
+  "name": "@typescript-benchmark/benchmark",
+  "private": true,
+  "type": "module"
+}
