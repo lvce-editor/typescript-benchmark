@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import { chromium, type Browser, type CDPSession } from 'playwright'
 import { aggregate } from './aggregate.ts'
-import { summarizeProfile } from './profile.ts'
+import { normalizeProfileDeltas, summarizeProfile } from './profile.ts'
 import { TargetSession } from './targetSession.ts'
 import { requestPerformanceTrace } from './readTrace.ts'
 import { findTypeScriptWorker } from './findTypeScriptWorker.ts'
@@ -179,9 +179,105 @@ const runTrial = async (iteration: number): Promise<Trial> => {
   }
 }
 
+// Capture the first diagnostic in a separate fresh editor launch. Starting the
+// profiler in the readiness trial would silently add profiler overhead to the
+// published readiness measurement.
+const captureColdProfile = async (iteration: number): Promise<Partial<Trial>> => {
+  const port = await availablePort()
+  const profile = join(rootDir, '.tmp/profiles', `trial-${iteration}-cold`)
+  await rm(profile, { recursive: true, force: true })
+  await mkdir(profile, { recursive: true })
+  const dataHome = join(profile, 'data')
+  const extensionInstallPath = join(dataHome, setup.editor.dataDirectoryName, 'extensions', setup.extension.id)
+  await mkdir(dirname(extensionInstallPath), { recursive: true })
+  await cp(setup.extension.directory, extensionInstallPath, { recursive: true })
+  const appProcess = spawn(editorBinary, getEditorArgs(port, join(profile, 'user-data'), fixtureFile), {
+    detached: true,
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: join(profile, 'config'),
+      XDG_DATA_HOME: dataHome,
+      XDG_CACHE_HOME: join(profile, 'cache'),
+      XDG_STATE_HOME: join(profile, 'state'),
+    },
+  })
+  const launchError = new Promise<never>((_resolve, reject) => appProcess.once('error', reject))
+  let browser: Browser | undefined
+  let root: CDPSession | undefined
+  let worker: TargetSession | undefined
+  let profileStarted = false
+  try {
+    browser = await Promise.race([connect(port), launchError])
+    await waitFor(async () => browser!.contexts().flatMap((context) => context.pages()).find((item) => item.url() !== 'about:blank'), timeoutMs)
+    root = await browser.newBrowserCDPSession()
+    await root.send('Target.setDiscoverTargets', { discover: true })
+    const target = await waitFor(async () => {
+      const { targetInfos } = await root!.send('Target.getTargets') as { targetInfos: TargetInfo[] }
+      return findTypeScriptWorker(targetInfos)
+    }, timeoutMs)
+    const { sessionId } = await root.send('Target.attachToTarget', { targetId: target.targetId, flatten: false })
+    worker = new TargetSession(root, sessionId)
+    await worker.send('Runtime.enable')
+    const textDocument = {
+      uri: pathToFileURL(fixtureFile).href,
+      text: await readFile(fixtureFile, 'utf8'),
+    }
+    await worker.send('Profiler.enable')
+    await worker.send('Profiler.start')
+    profileStarted = true
+    const requestStartedAt = performance.now()
+    const coldTrace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument, 'getFirstPerformanceTrace')
+    const coldProfileWallMs = performance.now() - requestStartedAt
+    if (coldTrace.languageService?.cache !== 'created') {
+      throw new Error(`The cold profile trial did not capture language-service creation: ${coldTrace.languageService?.cache || 'cache state unavailable'}`)
+    }
+    const cpu = await worker.send<{ profile: CpuProfile }>('Profiler.stop')
+    profileStarted = false
+    const rawProfilePath = join(outputDir, `cold-cpu-profile-${iteration}-raw.json`)
+    const profilePath = join(outputDir, `cold-cpu-profile-${iteration}.json`)
+    const profileSummaryPath = join(outputDir, `cold-cpu-profile-${iteration}-summary.json`)
+    await writeFile(rawProfilePath, `${JSON.stringify(cpu.profile, null, 2)}\n`)
+    const normalized = normalizeProfileDeltas(cpu.profile)
+    await writeFile(profilePath, `${JSON.stringify(normalized.profile, null, 2)}\n`)
+    const profileSummary = summarizeProfile(normalized.profile)
+    await writeFile(profileSummaryPath, `${JSON.stringify(profileSummary.rows, null, 2)}\n`)
+    return {
+      coldProfilePath: profilePath.replace(`${rootDir}/`, ''),
+      coldProfileWallMs,
+      coldProfileSampleCount: profileSummary.sampleCount,
+      coldProfileActiveSampleCount: profileSummary.activeSampleCount,
+      coldProfileIdleSampleCount: profileSummary.idleSampleCount,
+      coldProfileActiveMs: profileSummary.activeMs,
+      coldProfileIdleMs: profileSummary.idleMs,
+      coldProfileWindowMs: profileSummary.profileWindowMs,
+      coldProfileAdjustedSampleCount: normalized.adjustedSampleCount,
+      coldProfileExcludedDeltaUs: normalized.excludedDeltaUs,
+    }
+  } catch (error) {
+    return { coldProfileError: error instanceof Error ? error.stack || error.message : String(error) }
+  } finally {
+    if (profileStarted && worker) await worker.send('Profiler.stop').catch(() => undefined)
+    await worker?.close()
+    await root?.detach().catch(() => undefined)
+    await browser?.close().catch(() => undefined)
+    if (appProcess.pid && appProcess.exitCode === null && appProcess.signalCode === null) {
+      try { process.kill(-appProcess.pid, 'SIGTERM') } catch { /* already exited */ }
+      await Promise.race([
+        new Promise<void>((resolve) => appProcess.once('close', () => resolve())),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+      ])
+      if (appProcess.exitCode === null && appProcess.signalCode === null) {
+        try { process.kill(-appProcess.pid, 'SIGKILL') } catch { /* already exited */ }
+      }
+    }
+    await rm(profile, { recursive: true, force: true })
+  }
+}
+
 await mkdir(outputDir, { recursive: true })
 for (let iteration = 1; iteration <= iterations; iteration++) {
-  const trial = await runTrial(iteration)
+  const trial = { ...await runTrial(iteration), ...await captureColdProfile(iteration) }
   trials.push(trial)
   console.log(JSON.stringify(trial))
   await writeFile(join(outputDir, 'trials.json'), `${JSON.stringify({
@@ -192,10 +288,11 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
       readyBoundary: 'Diagnostic.getFirstPerformanceTrace returned the first cold diagnostic trace for the pinned about-view TypeScript file; stopwatch starts immediately before launching LVCE and ends after validating the document URI and absence of a diagnostic error',
       memoryBoundary: 'dedicated TypeScript worker V8 usedSize bytes after CPU profile collection; excludes native/external process memory',
       cpuProfileBoundary: `${profileRequests} sequential warm Diagnostic.getPerformanceTrace calls after cold readiness; CPU samples measure on-CPU time during those calls, not wall time`,
+      coldCpuProfileBoundary: 'Separate fresh editor launch; CPU Profiler starts before the first Diagnostic.getFirstPerformanceTrace request and stops after its response. The unprofiled readiness trial remains unchanged.',
       coldTrials: true,
     },
     trials,
   }, null, 2)}\n`)
 }
 await writeFile(join(outputDir, 'summary.json'), `${JSON.stringify(aggregate(trials), null, 2)}\n`)
-if (trials.some((trial) => !trial.success)) process.exitCode = 1
+if (trials.some((trial) => !trial.success || !trial.coldProfilePath)) process.exitCode = 1

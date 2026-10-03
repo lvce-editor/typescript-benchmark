@@ -19,7 +19,7 @@ npm run report
 
 ## Measurement boundaries
 
-Readiness is measured from application launch until the TypeScript worker returns a fresh `Diagnostic.getPerformanceTrace` response for the opened fixture file with no diagnostic error. The timer includes worker discovery and the diagnostic response. A Chromium CPU profile is collected during a second, warm trace request so profiling does not change the cold readiness measurement. Each request has a five-minute timeout, adjustable with `--timeout-ms`. Every trial gets a new Chromium user-data directory and isolated XDG config, data, cache, and state paths; the editor process tree is stopped before those files are removed.
+Readiness is measured from application launch until the TypeScript worker returns a fresh `Diagnostic.getPerformanceTrace` response for the opened fixture file with no diagnostic error. The timer includes worker discovery and the diagnostic response. CPU profiles are collected in separate fresh editor launches: one captures the first cold diagnostic request and another captures ten sequential warm requests. Neither profile adds profiler overhead to the published readiness measurement. Each request has a five-minute timeout, adjustable with `--timeout-ms`. Every trial gets a new Chromium user-data directory and isolated XDG config, data, cache, and state paths; the editor process tree is stopped before those files are removed.
 
 Memory is the worker's V8 `Runtime.getHeapUsage().usedSize` after profile collection. It excludes native and external memory and must not be read as total extension process RSS. Missing worker targets, CDP failures, invalid memory readings, and timeouts are recorded as failed trials and fail the run; no missing reading is presented as zero.
 
@@ -27,7 +27,7 @@ The dashboard shows median values from successful cold launches, raw trials and 
 
 The CPU breakdown page also lists the distinct files in the TypeScript compiler program after semantic diagnostics, ordered by UTF-8 source-text size. This includes loaded declaration libraries (including cached TypeScript libraries); project files that were only discovered but not loaded are excluded. The chart uses the first successful cold trial and reports exact byte counts alongside readable sizes.
 
-The CPU breakdown also links each successful trial's raw Chromium CPU profile to a self-hosted, pinned Speedscope viewer. Open a trial to pan, zoom, search, and inspect its sampled call stacks in the browser; raw profile downloads remain available. These profiles cover warm TypeScript worker requests after readiness, not cold startup or every editor process.
+The CPU breakdown links each successful trial's cold and warm Chromium CPU profiles to a self-hosted, pinned Speedscope viewer. The cold profile surrounds the first diagnostic request in its own fresh launch; its wall duration and sampled worker CPU appear beside diagnostic stage and synchronous RPC evidence from the paired unprofiled readiness trial. Stage and RPC durations can overlap and do not partition request wall time. The report leaves time without sampled worker stacks or trace attribution explicitly unexplained. Rare negative sample intervals are clamped to zero in the interactive profile and counted in the report; the original Chromium profile remains downloadable. Open a trial to pan, zoom, search, and inspect its sampled call stacks in the browser; raw profile downloads remain available. The cold profile covers the TypeScript worker, not other editor processes.
 
 ## LVCE Editor / VS Code comparison
 

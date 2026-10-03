@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { aggregate } from '../src/aggregate.ts'
-import { summarizeProfile } from '../src/profile.ts'
+import { normalizeProfileDeltas, summarizeProfile } from '../src/profile.ts'
 import { parsePerformanceTrace } from '../src/readTrace.ts'
 import { findTypeScriptWorker } from '../src/findTypeScriptWorker.ts'
 import { TargetSession } from '../src/targetSession.ts'
@@ -65,6 +65,19 @@ test('accepts an empty CPU profile and rejects malformed profile trees or sample
   assert.throws(() => summarizeProfile({
     nodes: [{ id: 1, callFrame: { functionName: 'a', url: '' } }], samples: [2], timeDeltas: [1000],
   }), /Invalid Chromium CPU profile sample/)
+})
+
+test('clamps negative Chromium sample intervals for interactive profiles and reports the adjustment', () => {
+  const raw = {
+    nodes: [{ id: 1, callFrame: { functionName: 'work', url: 'worker.js' } }],
+    samples: [1, 1, 1], timeDeltas: [1000, -4, 2000],
+  }
+  const normalized = normalizeProfileDeltas(raw)
+  assert.deepEqual(raw.timeDeltas, [1000, -4, 2000])
+  assert.deepEqual(normalized.profile.timeDeltas, [1000, 0, 2000])
+  assert.equal(normalized.adjustedSampleCount, 1)
+  assert.equal(normalized.excludedDeltaUs, 4)
+  assert.equal(summarizeProfile(normalized.profile).profileWindowMs, 3)
 })
 
 test('parses a nested performance trace and rejects non-trace editor contents', () => {

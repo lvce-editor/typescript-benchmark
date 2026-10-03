@@ -1,5 +1,32 @@
 import type { CpuProfile, CpuProfileSummary, ProfileRow } from './types.ts'
 
+export interface NormalizedProfile {
+  readonly profile: CpuProfile
+  readonly adjustedSampleCount: number
+  readonly excludedDeltaUs: number
+}
+
+// Chromium can emit a small number of negative deltas after long captures.
+// Keep the original artifact separately and clamp only those impossible
+// durations for the Speedscope-compatible profile and duration summary.
+export const normalizeProfileDeltas = (profile: CpuProfile): NormalizedProfile => {
+  let adjustedSampleCount = 0
+  let excludedDeltaUs = 0
+  const timeDeltas = profile.timeDeltas.map((delta) => {
+    if (Number.isFinite(delta) && delta < 0) {
+      adjustedSampleCount++
+      excludedDeltaUs += -delta
+      return 0
+    }
+    return delta
+  })
+  return {
+    profile: adjustedSampleCount ? { ...profile, timeDeltas } : profile,
+    adjustedSampleCount,
+    excludedDeltaUs,
+  }
+}
+
 export const summarizeProfile = (profile: CpuProfile): CpuProfileSummary => {
   if (!Array.isArray(profile.nodes) || !Array.isArray(profile.samples) || !Array.isArray(profile.timeDeltas) || profile.samples.length !== profile.timeDeltas.length) {
     throw new TypeError('Invalid Chromium CPU profile: expected nodes, samples, and matching timeDeltas')
@@ -22,7 +49,9 @@ export const summarizeProfile = (profile: CpuProfile): CpuProfileSummary => {
   for (let index = 0; index < profile.samples.length; index++) {
     const node = byId.get(profile.samples[index]!)
     const delta = profile.timeDeltas[index]!
-    if (!node || !Number.isFinite(delta) || delta < 0) throw new TypeError('Invalid Chromium CPU profile sample')
+    if (!node || !Number.isFinite(delta) || delta < 0) {
+      throw new TypeError(`Invalid Chromium CPU profile sample at index ${index}: node ${profile.samples[index]}, delta ${delta}`)
+    }
     totalUs += delta
     if (node.callFrame.functionName === '(idle)') {
       idleUs += delta

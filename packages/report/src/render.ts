@@ -8,6 +8,7 @@ export interface ProfileAggregateRow extends ProfileRow {
 
 export interface ProfileBreakdown {
   readonly rows: readonly ProfileAggregateRow[]
+  readonly coldRows?: readonly ProfileAggregateRow[]
   readonly trialCount: number
   readonly totalSampleCount: number
   readonly sampleCount: number
@@ -17,6 +18,18 @@ export interface ProfileBreakdown {
   readonly profileWindowMs: number
   readonly warmRequests: number
   readonly downloads: readonly string[]
+  readonly coldDownloads?: readonly string[]
+  readonly coldRawDownloads?: readonly string[]
+  readonly coldTrialCount?: number
+  readonly coldSampleCount?: number
+  readonly coldActiveSampleCount?: number
+  readonly coldIdleSampleCount?: number
+  readonly coldSampledCpuMs?: number
+  readonly coldIdleTimeMs?: number
+  readonly coldProfileWindowMs?: number
+  readonly coldProfileWallMs?: number
+  readonly coldAdjustedSampleCount?: number
+  readonly coldExcludedDeltaUs?: number
 }
 
 export interface BenchmarkData {
@@ -105,15 +118,31 @@ export const renderPages = (data: BenchmarkData, profiles: ProfileBreakdown): { 
     ? `<p>Highest sampled active self-time contributor: ${escapeHtml(cpuRows[0].functionName || '(anonymous)')} in ${escapeHtml(cpuRows[0].url || '(native)')}, median ${cpuRows[0].selfTimeMs.toFixed(2)} ms (${cpuRows[0].selfPercent.toFixed(1)}% of sampled active time per trial).</p>`
     : '<p>No active sampled CPU hotspots were available in the successful profiles.</p>'
   const downloads = profiles.downloads.map((name) => `<li><a href="cpu-profiles/${escapeHtml(name)}" download>${escapeHtml(name)}</a></li>`).join('')
-  const interactiveProfiles = profiles.downloads.map((name) => {
+  const warmInteractiveProfiles = profiles.downloads.map((name) => {
     const iteration = Number(name.match(/^cpu-profile-(\d+)\.json$/)?.[1])
     const profileUrl = encodeURIComponent(`../cpu-profiles/${name}`)
     const title = encodeURIComponent(`Trial ${iteration} warm TypeScript worker CPU profile`)
-    return `<li><a href="speedscope/index.html#profileURL=${profileUrl}&amp;title=${title}">Open interactive profile for trial ${iteration}</a></li>`
+    return `<li><a href="speedscope/index.html#profileURL=${profileUrl}&amp;title=${title}">Open warm interactive profile for trial ${iteration}</a></li>`
   }).join('')
+  const coldInteractiveProfiles = (profiles.coldDownloads || []).map((name) => {
+    const iteration = Number(name.match(/^cold-cpu-profile-(\d+)\.json$/)?.[1])
+    const profileUrl = encodeURIComponent(`../cpu-profiles/${name}`)
+    const title = encodeURIComponent(`Trial ${iteration} cold TypeScript worker CPU profile`)
+    return `<li><a href="speedscope/index.html#profileURL=${profileUrl}&amp;title=${title}">Open cold interactive profile for trial ${iteration}</a></li>`
+  }).join('')
+  const coldCpuRows = (profiles.coldRows || []).slice(0, 10)
+  const coldCpuChart = barChart('Top sampled active worker CPU self time during cold diagnostic · median per trial',
+    coldCpuRows.map((row) => `${row.functionName || '(anonymous)'} · ${row.url || '(native)'}`),
+    coldCpuRows.map((row) => row.selfTimeMs), 'ms')
+  const coldProfileFailures = data.trials.filter((trial) => trial.coldProfileError).map((trial) => `<li class="failure">Trial ${trial.iteration}: ${escapeHtml(trial.coldProfileError)}</li>`).join('')
+  const coldProfileWall = data.trials.flatMap((trial) => Number.isFinite(trial.coldProfileWallMs) ? [trial.coldProfileWallMs!] : [])
+  const coldCaptureSummary = coldProfileWall.length
+    ? `<p>Separate profiled fresh launches: first diagnostic request median wall time ${median(coldProfileWall)!.toFixed(1)} ms. Captured worker CPU profile windows total ${Number(profiles.coldProfileWindowMs || 0).toFixed(2)} ms, including ${Number(profiles.coldSampledCpuMs || 0).toFixed(2)} ms of active samples and ${Number(profiles.coldIdleTimeMs || 0).toFixed(2)} ms idle. ${Number(profiles.coldAdjustedSampleCount || 0)} negative sample intervals totalling ${Number(profiles.coldExcludedDeltaUs || 0).toFixed(0)} µs were clamped to zero in the interactive profile; original Chromium profiles are downloadable below. Profiling and wall-time measurements come from the separate profiled launch; readiness remains measured in the unprofiled launch.</p>`
+    : '<p>No cold CPU profile was captured. Missing captures are unavailable, not zero.</p>'
   const rawColdTraces = data.trials.filter((trial) => trial.success && trial.coldTracePath)
   const coldTraceLinks = rawColdTraces.map((trial) => `<li><a href="${escapeHtml(trial.coldTracePath)}" download>Trial ${trial.iteration} cold diagnostic trace</a></li>`).join('')
-  const breakdown = shell('TypeScript worker startup and CPU breakdown', `${diagnosticTotalChart}${stageChart}${rpcDurationChart}${rpcCountChart}${cpuChart}<section>${hotspot}${traceCacheSummary}<p>The diagnostic and synchronous RPC charts use each trial's first diagnostic pass, captured during initial TypeScript analysis. Diagnostic total and stage values are within that pass; stages can nest. RPC calls occur inside those stages, so durations overlap and must not be added together or treated as a partition of total startup. RPC duration includes transport and waiting and does not isolate filesystem-process execution time. The startup phase chart uses sequential intervals from the same launch instant through the readiness boundary on the overview; remaining time is shown explicitly. The CPU profile covers ${profiles.warmRequests} sequential warm calls per trial after readiness. Function rows show median active sampled time and percentage per trial across ${profiles.trialCount} successful profiles, with median active sample occurrences. Self time counts samples in the function itself; inclusive time also counts descendant samples, so inclusive rows overlap. V8 (idle) samples are excluded from function rankings and active-time percentages: of ${profiles.totalSampleCount} samples, ${profiles.sampleCount} active samples represent ${profiles.sampledCpuMs.toFixed(2)} ms of sampled active time and ${profiles.idleSampleCount} idle samples span ${profiles.idleTimeMs.toFixed(2)} ms, within a ${profiles.profileWindowMs.toFixed(2)} ms profile window. CPU profile sampling is distinct from wall time and blocked time.</p><p>Profiles with few active samples provide only coarse evidence; function rankings can vary between runs.</p><p><a href="profiles.json" download>Download median profile summary</a></p><h2>Interactive CPU profiles</h2><p>Open a trial in the self-hosted Speedscope viewer to pan, zoom, search, and inspect sampled call stacks. These profiles show warm TypeScript worker requests after readiness.</p><ul>${interactiveProfiles || '<li>No interactive CPU profiles are available.</li>'}</ul><h2>Raw cold diagnostic traces</h2><ul>${coldTraceLinks || '<li>No cold traces are available.</li>'}</ul><h2>Raw profiles</h2><ul>${downloads || '<li>No raw CPU profiles are available.</li>'}</ul><table><thead><tr><th>Function</th><th>Source location</th><th>Active self</th><th>Active inclusive</th><th>Samples · profiles</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No active CPU samples were collected.</td></tr>'}</tbody></table>${metadata}`)
+  const rawProfileDownloads = [...(profiles.coldRawDownloads || []), ...profiles.downloads].map((name) => `<li><a href="cpu-profiles/${escapeHtml(name)}" download>${escapeHtml(name)}</a></li>`).join('')
+  const breakdown = shell('TypeScript worker startup and CPU breakdown', `${diagnosticTotalChart}${stageChart}${rpcDurationChart}${rpcCountChart}${coldCpuChart}${cpuChart}<section>${hotspot}${traceCacheSummary}${coldCaptureSummary}<p>The diagnostic and synchronous RPC charts use each unprofiled readiness trial's first diagnostic pass. Diagnostic total and stage values are within that pass; stages can nest. RPC calls occur inside those stages, so durations overlap and must not be added together or treated as a partition of total startup. RPC duration includes transport and waiting and does not isolate filesystem-process execution time. These internal values may leave part of the external first-request wall time unexplained; no unmeasured duration is assigned to a stage. The cold Speedscope profile is captured around the first diagnostic request in a separate fresh launch and shows worker sampled CPU, including idle samples. Its request wall duration is shown above; time not represented by active worker stacks remains waiting, idle, outside this worker, or otherwise unattributed. The overview readiness and stage timings remain from the unprofiled launch. The warm CPU profile covers ${profiles.warmRequests} sequential warm calls per trial after readiness. Function rows show median active sampled time and percentage per trial across ${profiles.trialCount} successful profiles, with median active sample occurrences. Self time counts samples in the function itself; inclusive time also counts descendant samples, so inclusive rows overlap. V8 (idle) samples are excluded from function rankings and active-time percentages: of ${profiles.totalSampleCount} samples, ${profiles.sampleCount} active samples represent ${profiles.sampledCpuMs.toFixed(2)} ms of sampled active time and ${profiles.idleSampleCount} idle samples span ${profiles.idleTimeMs.toFixed(2)} ms, within a ${profiles.profileWindowMs.toFixed(2)} ms profile window. CPU profile sampling is distinct from wall time and blocked time.</p><p>Profiles with few active samples provide only coarse evidence; function rankings can vary between runs.</p><p><a href="profiles.json" download>Download median profile summary</a></p><h2>Interactive CPU profiles</h2><p>Open a trial in the self-hosted Speedscope viewer to pan, zoom, search, and inspect sampled call stacks.</p><ul>${coldInteractiveProfiles || '<li>No cold interactive CPU profiles are available.</li>'}${warmInteractiveProfiles || '<li>No warm interactive CPU profiles are available.</li>'}</ul><h2>Cold profile capture failures</h2><ul>${coldProfileFailures || '<li>None</li>'}</ul><h2>Raw cold diagnostic traces</h2><ul>${coldTraceLinks || '<li>No cold traces are available.</li>'}</ul><h2>Raw profiles</h2><ul>${rawProfileDownloads || '<li>No raw CPU profiles are available.</li>'}</ul><table><thead><tr><th>Function</th><th>Source location</th><th>Active self</th><th>Active inclusive</th><th>Samples · profiles</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No active CPU samples were collected.</td></tr>'}</tbody></table>${metadata}`)
   const loadedFiles = sortLoadedFiles(traces[0]?.loadedFiles || [])
   const maxFileSize = Math.max(1, loadedFiles[0]?.sizeBytes || 0)
   const loadedFileRows = loadedFiles.map((file) => {
