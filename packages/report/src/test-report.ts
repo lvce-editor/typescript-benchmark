@@ -24,6 +24,8 @@ assert.match(pages.breakdown, /No active CPU samples were collected/)
 assert.match(pages.breakdown, /10 sequential warm calls per trial/)
 assert.match(pages.breakdown, /Raw profiles/)
 assert.match(pages.breakdown, /cpu-profiles\/cpu-profile-1\.json/)
+assert.match(pages.breakdown, /speedscope\/index\.html#profileURL=\.\.%2Fcpu-profiles%2Fcpu-profile-1\.json&amp;title=Trial%201%20warm%20TypeScript%20worker%20CPU%20profile/)
+assert.match(pages.breakdown, /Open interactive profile for trial 1/)
 assert.match(pages.breakdown, /V8 \(idle\) samples are excluded/)
 const populated = renderPages({
   metadata: {
@@ -93,6 +95,7 @@ const emptyFiles = renderPages({
 assert.match(emptyFiles.breakdown, /0 distinct files/)
 assert.match(emptyFiles.breakdown, /No files were loaded into the TypeScript compiler program/)
 assert.match(emptyFiles.index, /Remaining within readiness interval[\s\S]*unavailable/)
+assert.match(emptyFiles.breakdown, /No interactive CPU profiles are available/)
 const aggregatedRows = aggregateProfiles([
   { rows: [{
     functionName: 'parse', url: 'typescript.js', lineNumber: 3, columnNumber: 0,

@@ -27,6 +27,8 @@ The dashboard shows median values from successful cold launches, raw trials and 
 
 The CPU breakdown page also lists the distinct files in the TypeScript compiler program after semantic diagnostics, ordered by UTF-8 source-text size. This includes loaded declaration libraries (including cached TypeScript libraries); project files that were only discovered but not loaded are excluded. The chart uses the first successful cold trial and reports exact byte counts alongside readable sizes.
 
+The CPU breakdown also links each successful trial's raw Chromium CPU profile to a self-hosted, pinned Speedscope viewer. Open a trial to pan, zoom, search, and inspect its sampled call stacks in the browser; raw profile downloads remain available. These profiles cover warm TypeScript worker requests after readiness, not cold startup or every editor process.
+
 ## LVCE Editor / VS Code comparison
 
 `comparison.html` adds paired launch-to-visible-error, files-read and stat-call charts while retaining the original LVCE worker reports. Setup pins VS Code 1.140.0 (commit `07f806f999227108933c2e30515b26eecc1fda74`) and verifies its archive SHA-256. Both editors use the same generated fixture version 1: 5,000 independent exported TypeScript modules plus `benchmark.ts`, which imports them all and contains exactly one deliberate TS2322 error on line 1. The content digest, editor/extension/TypeScript versions, platform, and Node version accompany `results/comparison.json`. This synthetic large project is reproducible, but is not representative of every real repository.
