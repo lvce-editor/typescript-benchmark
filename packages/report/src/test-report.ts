@@ -11,7 +11,7 @@ const pages = renderPages({
     readyBoundary: 'worker target answered a CDP ping',
     memoryBoundary: 'worker V8 heap',
   },
-  trials: [{ iteration: 1, success: false, readyMs: null, heapUsedBytes: null, processMemoryBytes: null, error: '<timeout>' }],
+  trials: [{ iteration: 1, success: false, readyMs: null, heapUsedBytes: null, processMemoryBytes: null, error: '<timeout>', coldProfileError: 'capture failed' }],
 }, {
   rows: [], trialCount: 1, totalSampleCount: 0, sampleCount: 0, idleSampleCount: 0,
   sampledCpuMs: 0, idleTimeMs: 0, profileWindowMs: 0, warmRequests: 10,
@@ -25,7 +25,8 @@ assert.match(pages.breakdown, /10 sequential warm calls per trial/)
 assert.match(pages.breakdown, /Raw profiles/)
 assert.match(pages.breakdown, /cpu-profiles\/cpu-profile-1\.json/)
 assert.match(pages.breakdown, /speedscope\/index\.html#profileURL=\.\.%2Fcpu-profiles%2Fcpu-profile-1\.json&amp;title=Trial%201%20warm%20TypeScript%20worker%20CPU%20profile/)
-assert.match(pages.breakdown, /Open interactive profile for trial 1/)
+assert.match(pages.breakdown, /Open warm interactive profile for trial 1/)
+assert.match(pages.breakdown, /Trial 1: capture failed/)
 assert.match(pages.breakdown, /V8 \(idle\) samples are excluded/)
 const populated = renderPages({
   metadata: {
@@ -35,7 +36,9 @@ const populated = renderPages({
   },
   trials: [{ iteration: 1, success: true, readyMs: 10, heapUsedBytes: 100, processMemoryBytes: null,
     startupPhases: { launchToCdp: 1, pageReady: 2, workerDiscovery: 1, workerProtocol: 1, fixtureRead: 1, coldDiagnostic: 4 },
-    coldTracePath: 'cold-trace-1.json', coldTrace: {
+    coldTracePath: 'cold-trace-1.json', coldProfilePath: 'cold-cpu-profile-1.json', coldProfileWallMs: 4000,
+    coldProfileSampleCount: 4, coldProfileActiveSampleCount: 3, coldProfileIdleSampleCount: 1,
+    coldProfileActiveMs: 20, coldProfileIdleMs: 3980, coldProfileWindowMs: 4000, coldTrace: {
     file: { uri: 'file:///workspace/main.ts' }, fresh: true, schemaVersion: 1, totalDurationMs: 3,
     languageService: { cache: 'created' },
     stages: { semanticDiagnostics: { durationMs: 3 } },
@@ -58,10 +61,23 @@ const populated = renderPages({
     functionName: 'parse', url: 'typescript.js', lineNumber: 3, columnNumber: 0,
     selfTimeMs: 4, inclusiveTimeMs: 8, selfPercent: 40, inclusivePercent: 80, sampleCount: 2, trialCount: 1,
   }],
+  coldRows: [{
+    functionName: 'parseCold', url: 'typescript.js', lineNumber: 4, columnNumber: 0,
+    selfTimeMs: 20, inclusiveTimeMs: 30, selfPercent: 100, inclusivePercent: 100, sampleCount: 3, trialCount: 1,
+  }],
+  coldDownloads: ['cold-cpu-profile-1.json'], coldRawDownloads: ['cold-cpu-profile-1-raw.json'], coldTrialCount: 1, coldSampleCount: 4, coldActiveSampleCount: 3,
+  coldIdleSampleCount: 1, coldSampledCpuMs: 20, coldIdleTimeMs: 3980, coldProfileWindowMs: 4000, coldProfileWallMs: 4000,
+  coldAdjustedSampleCount: 2, coldExcludedDeltaUs: 6,
   trialCount: 1, totalSampleCount: 5, sampleCount: 4, idleSampleCount: 1,
   sampledCpuMs: 10, idleTimeMs: 2, profileWindowMs: 12, warmRequests: 10, downloads: [],
 })
 assert.match(populated.breakdown, /Top sampled active worker CPU self time/)
+assert.match(populated.breakdown, /Top sampled active worker CPU self time during cold diagnostic/)
+assert.match(populated.breakdown, /Open cold interactive profile for trial 1/)
+assert.match(populated.breakdown, /first diagnostic request median wall time 4000\.0 ms/)
+assert.match(populated.breakdown, /2 negative sample intervals totalling 6 µs were clamped to zero/)
+assert.match(populated.breakdown, /cold-cpu-profile-1-raw\.json/)
+assert.match(populated.breakdown, /time not represented by active worker stacks remains waiting, idle, outside this worker, or otherwise unattributed/)
 assert.match(populated.breakdown, /Highest sampled active self-time contributor: parse/)
 assert.match(populated.breakdown, /4 active samples represent 10\.00 ms of sampled active time and 1 idle samples span 2\.00 ms/)
 assert.match(populated.breakdown, /4\.00 ms \(40\.0%\)/)
@@ -95,7 +111,7 @@ const emptyFiles = renderPages({
 assert.match(emptyFiles.breakdown, /0 distinct files/)
 assert.match(emptyFiles.breakdown, /No files were loaded into the TypeScript compiler program/)
 assert.match(emptyFiles.index, /Remaining within readiness interval[\s\S]*unavailable/)
-assert.match(emptyFiles.breakdown, /No interactive CPU profiles are available/)
+assert.match(emptyFiles.breakdown, /No cold interactive CPU profiles are available/)
 const aggregatedRows = aggregateProfiles([
   { rows: [{
     functionName: 'parse', url: 'typescript.js', lineNumber: 3, columnNumber: 0,

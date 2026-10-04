@@ -7,6 +7,17 @@ export interface Trial {
   readonly processMemoryBytes: number | null
   readonly workerUrl?: string
   readonly profilePath?: string
+  readonly coldProfilePath?: string
+  readonly coldProfileWallMs?: number
+  readonly coldProfileSampleCount?: number
+  readonly coldProfileActiveSampleCount?: number
+  readonly coldProfileIdleSampleCount?: number
+  readonly coldProfileActiveMs?: number
+  readonly coldProfileIdleMs?: number
+  readonly coldProfileWindowMs?: number
+  readonly coldProfileAdjustedSampleCount?: number
+  readonly coldProfileExcludedDeltaUs?: number
+  readonly coldProfileError?: string
   readonly featureTracePath?: string
   readonly featureTrace?: TypeScriptTrace
   readonly coldTracePath?: string
