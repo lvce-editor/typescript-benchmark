@@ -3,6 +3,7 @@ export interface Trial {
   readonly success: boolean
   readonly readyMs: number | null
   readonly startupPhases?: Readonly<Record<string, number>>
+  readonly warmRequests?: readonly { readonly wallMs: number; readonly totalDurationMs: number; readonly syncRpc?: TypeScriptTrace['syncRpc'] }[]
   readonly heapUsedBytes: number | null
   readonly processMemoryBytes: number | null
   readonly workerUrl?: string
@@ -44,6 +45,7 @@ export const startupPhaseNames = [
 export type StartupPhaseName = (typeof startupPhaseNames)[number]
 
 export interface TypeScriptTrace {
+  readonly diagnostics?: { readonly count: number }
   readonly file: { readonly uri?: string }
   readonly fresh: true
   readonly schemaVersion: 1

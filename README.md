@@ -40,3 +40,15 @@ The stopwatch starts immediately before launching the executable and stops at CD
 Linux `strace -f -yy -ttt` follows the entire editor process tree, including threads, language servers and filesystem workers. The filesystem interval starts before the traced launch and ends at the visible underline, before verification or screenshots. Both syscall entry and completion must fall within the interval. Counts include successful and failed `stat`, `lstat`, `fstat`, `newfstatat`, and `statx` attempts. “Files read” counts distinct absolute descriptor paths with positive `read`, `pread64`, `readv`, `preadv` or `preadv2` results. Repeated calls are reported separately. This includes application, library, project and profile paths, and excludes descriptor-less reads, memory-mapped accesses and IPC. It does not measure physical disk I/O, inode identity, or the compiler's loaded-file list. Trace strings are suppressed to avoid storing read buffers. Wall-clock boundaries have millisecond resolution.
 
 Raw traces, screenshots, exact diagnostic evidence and launch logs accompany the CI artifact. Traced elapsed times never enter the timing chart. Failures/timeouts fail the benchmark, retain null readings and remain visible in reports; they are never converted to zeros. `COMPARISON_ITERATIONS=1` gives a short run; `COMPARISON_MODE=timing` or `filesystem` isolates a measurement for diagnosis; `COMPARISON_TIMEOUT_MS` adjusts the bounded per-launch readiness timeout (default five minutes). CI requires all four test platforms and the Ubuntu benchmark before merging and deploying Pages.
+
+## Source extension experiments
+
+The **TypeScript extension comparison** workflow builds two explicit extension commits and runs five paired trials in alternating order on one runner, using the same pinned editor and about-view fixture. Both builds must have identical dependency lockfiles and TypeScript versions. Each trial has a fresh isolated app profile, an unprofiled cold diagnostic/readiness measurement, ten unprofiled unchanged-document warm requests, and separate cold/warm CPU profiles. The runner checks matching loaded filenames and byte sizes and zero opened-file diagnostics. OS disk caches remain warm; heap readings are post-profile V8 usedSize without forced GC.
+
+After `npm run setup` and building both extension checkouts with `npm run build`:
+
+```sh
+xvfb-run -a node packages/benchmark/src/extensionComparison.ts /path/to/baseline /path/to/candidate 5
+```
+
+Results, provenance and CPU profiles are written under `results/extension-comparison`. `overview.json` reports medians; `repetitions.json` retains the paired trials and warm request samples. Source builds override the release extension installed by setup. This workflow does not deploy the experimental results to the existing Pages dashboard.
