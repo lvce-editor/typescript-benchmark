@@ -54,3 +54,5 @@ xvfb-run -a node packages/benchmark/src/extensionComparison.ts /path/to/baseline
 Results, provenance and CPU profiles are written under `results/extension-comparison`. `overview.json` reports medians; `repetitions.json` retains the paired trials and warm request samples. Source builds override the release extension installed by setup. This workflow does not deploy the experimental results to the existing Pages dashboard.
 
 The warm wall stopwatch includes adapter cache refresh and IPC. The existing worker trace does not enumerate every RPC made internally during persistent-cache revalidation, so warm trace call counts must not be treated as total transport counts.
+
+Source comparisons additionally record `retainedHeapUsedBytes` after explicit worker garbage collection, after all timed/profiled requests have finished. This separate field helps distinguish retained memory from temporary allocation in the original post-profile heap reading; it does not measure peak memory or RSS.

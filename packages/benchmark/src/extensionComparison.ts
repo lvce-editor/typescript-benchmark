@@ -48,7 +48,7 @@ for (let iteration = 0; iteration < repeats; iteration++) {
   for (const name of iteration % 2 ? ['candidate', 'baseline'] : ['baseline', 'candidate']) {
     const directory = join(output, `${name}-${iteration}`)
     const result = spawnSync(process.execPath, [join(root, 'packages/benchmark/src/run.ts'), '--iterations', '1'], {
-      cwd: root, env: { ...process.env, BENCHMARK_SETUP: variants[name].setup, BENCHMARK_OUTPUT: directory },
+      cwd: root, env: { ...process.env, BENCHMARK_SETUP: variants[name].setup, BENCHMARK_OUTPUT: directory, BENCHMARK_RETAINED_HEAP: '1' },
       encoding: 'utf8', timeout: 12 * 60_000, maxBuffer: 8 * 1024 * 1024,
     })
     await mkdir(directory, { recursive: true })
@@ -60,6 +60,7 @@ for (let iteration = 0; iteration < repeats; iteration++) {
     assert.equal(trial.success, true)
     assert.equal(trial.coldTrace?.diagnostics?.count, 0)
     assert.equal(trial.warmRequests?.length, 10)
+    assert.ok(Number.isFinite(trial.retainedHeapUsedBytes) && trial.retainedHeapUsedBytes! > 0)
     const identity = JSON.stringify(trial.coldTrace!.loadedFiles!.map(file => ({ name: file.fileName, bytes: file.sizeBytes })).sort((a,b) => a.name.localeCompare(b.name)))
     if (graph) assert.equal(identity, graph, 'Loaded filenames or source sizes differ')
     graph = identity
@@ -81,12 +82,13 @@ const summary = Object.fromEntries(Object.keys(variants).map(name => {
     coldRpcMs: median(trials.map(trial => trial.coldTrace!.syncRpc!.durationMs)),
     warmWallMs: median(trials.map(trial => median(trial.warmRequests!.map(request => request.wallMs)))),
     warmMs: median(trials.map(trial => median(trial.warmRequests!.map(request => request.totalDurationMs)))),
+    retainedHeapUsedBytes: median(trials.map(trial => trial.retainedHeapUsedBytes!)),
     heapUsedBytes: median(trials.map(trial => trial.heapUsedBytes!)),
   }]
 }))
 await writeFile(join(output, 'overview.json'), JSON.stringify({
   schemaVersion: 1, node: process.version, editor: setup.editor, fixture: setup.fixture, variants, repeats,
   allGraphsEqual: true, graphHash: createHash('sha256').update(graph!).digest('hex'), summary,
-  note: 'Alternating fresh isolated Electron profiles on one runner. Cold trace and readiness unprofiled; ten unchanged-document warm requests unprofiled. Separate warm/cold CPU profiles per trial. Same source filenames/sizes, dependency lockfile and compiler version required. OS page cache retained. Heap is post-profile V8 usedSize, not RSS; no forced GC. Source extension overrides the pinned release for both variants.',
+  note: 'Alternating fresh isolated Electron profiles on one runner. Cold trace and readiness unprofiled; ten unchanged-document warm requests unprofiled. Separate warm/cold CPU profiles per trial. Same source filenames/sizes, dependency lockfile and compiler version required. OS page cache retained. Heap is post-profile V8 usedSize, not RSS; a separate retainedHeapUsedBytes reading follows explicit GC after all timing/profile measurements. Source extension overrides the pinned release for both variants.',
 }, null, 2))
 console.log(summary)

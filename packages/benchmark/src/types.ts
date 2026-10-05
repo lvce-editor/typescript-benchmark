@@ -4,6 +4,7 @@ export interface Trial {
   readonly readyMs: number | null
   readonly startupPhases?: Readonly<Record<string, number>>
   readonly warmRequests?: readonly { readonly wallMs: number; readonly totalDurationMs: number; readonly syncRpc?: TypeScriptTrace['syncRpc'] }[]
+  readonly retainedHeapUsedBytes?: number
   readonly heapUsedBytes: number | null
   readonly processMemoryBytes: number | null
   readonly workerUrl?: string
