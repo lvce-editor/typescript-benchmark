@@ -15,7 +15,7 @@ import { waitFor } from './waitFor.ts'
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const outputDir = resolve(process.env.BENCHMARK_OUTPUT || join(rootDir, 'results'))
-const setup = JSON.parse(await readFile(join(rootDir, '.tmp/setup.json'), 'utf8')) as {
+const setup = JSON.parse(await readFile(resolve(process.env.BENCHMARK_SETUP || join(rootDir, '.tmp/setup.json')), 'utf8')) as {
   editor: { tag: string; asset: string; sha256: string; dataDirectoryName: string; binary: string }
   extension: { repository: string; release: string; sha256: string; id: string; directory: string; overridesBundled: boolean }
   fixture: { repository: string; commit: string; file: string }
@@ -123,6 +123,13 @@ const runTrial = async (iteration: number): Promise<Trial> => {
       fixtureRead: fixtureReadAt - workerProtocolReadyAt,
       coldDiagnostic: readyAt - fixtureReadAt,
     }
+    const warmRequests = []
+    for (let request = 0; request < profileRequests; request++) {
+      const start = performance.now()
+      const trace = await requestPerformanceTrace(worker, timeoutMs, setup.fixture.file, textDocument)
+      if (trace.languageService?.cache !== 'reused') throw new Error('Warm request recreated the language service')
+      warmRequests.push({ wallMs: performance.now() - start, totalDurationMs: trace.totalDurationMs, syncRpc: trace.syncRpc })
+    }
     await worker.send('Profiler.enable')
     await worker.send('Profiler.start')
     profileStarted = true
@@ -143,8 +150,15 @@ const runTrial = async (iteration: number): Promise<Trial> => {
     await writeFile(profileSummaryPath, `${JSON.stringify(profileSummary.rows, null, 2)}\n`)
     const memory = await worker.send<{ usedSize: number; totalSize: number }>('Runtime.getHeapUsage')
     if (!Number.isFinite(memory.usedSize) || memory.usedSize <= 0) throw new Error(`Invalid TypeScript worker heap reading: ${memory.usedSize}`)
+    let retainedHeapUsedBytes: number | undefined
+    if (process.env.BENCHMARK_RETAINED_HEAP === '1') {
+      await worker.send('HeapProfiler.collectGarbage')
+      const retained = await worker.send<{ usedSize: number }>('Runtime.getHeapUsage')
+      if (!Number.isFinite(retained.usedSize) || retained.usedSize <= 0) throw new Error('Invalid retained heap reading')
+      retainedHeapUsedBytes = retained.usedSize
+    }
     return {
-      iteration, success: true, readyMs, startupPhases, heapUsedBytes: memory.usedSize, processMemoryBytes: null,
+      iteration, success: true, readyMs, startupPhases, warmRequests, retainedHeapUsedBytes, heapUsedBytes: memory.usedSize, processMemoryBytes: null,
       workerUrl: target.url, profilePath: profilePath.replace(`${rootDir}/`, ''),
       coldTracePath: `cold-trace-${iteration}.json`, coldTrace: initialTrace,
       featureTracePath: featureTracePath.replace(`${rootDir}/`, ''), featureTrace,

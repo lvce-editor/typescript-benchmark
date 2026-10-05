@@ -1,0 +1,64 @@
+name: TypeScript extension comparison
+on:
+  pull_request:
+    paths:
+      - .github/workflows/extension-comparison.yml
+      - packages/benchmark/src/extensionComparison.ts
+      - packages/benchmark/src/run.ts
+      - packages/benchmark/src/types.ts
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Baseline extension commit
+        default: 76761b0847cc4ff4dddf8b841a9ab0ba7a2f5f55
+        required: true
+      candidate_ref:
+        description: Candidate extension commit
+        default: ae61dd465b7de7e98585bf4326d15689720497de
+        required: true
+      repeats:
+        description: Fresh paired iterations (3 to 10)
+        default: '5'
+        required: true
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: nice npm ci
+      - uses: actions/checkout@v5
+        with:
+          repository: lvce-editor/language-features-typescript
+          ref: ${{ inputs.baseline_ref || '76761b0847cc4ff4dddf8b841a9ab0ba7a2f5f55' }}
+          path: baseline-extension
+      - uses: actions/checkout@v5
+        with:
+          repository: lvce-editor/language-features-typescript
+          ref: ${{ inputs.candidate_ref || 'ae61dd465b7de7e98585bf4326d15689720497de' }}
+          path: candidate-extension
+      - run: nice npm ci && npm run build
+        working-directory: baseline-extension
+      - run: nice npm ci && npm run build
+        working-directory: candidate-extension
+      - run: npm run setup
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libasound2t64 libgbm1 libgtk-3-0t64 libnss3
+      - name: Alternate baseline and candidate cold/warm trials
+        env:
+          REPEATS: ${{ inputs.repeats || '5' }}
+        run: xvfb-run -a node packages/benchmark/src/extensionComparison.ts baseline-extension candidate-extension "$REPEATS"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: typescript-extension-comparison-${{ github.run_id }}
+          path: |
+            results/extension-comparison/
+            .tmp/setup.json
+          include-hidden-files: true
+          retention-days: 90
