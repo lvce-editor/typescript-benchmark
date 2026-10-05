@@ -15,7 +15,7 @@ xvfb-run -a npm run benchmark:comparison
 npm run report
 ```
 
-`setup` extracts the pinned official LVCE Editor `v0.119.1` amd64 Debian release after verifying its published SHA-256 digest, then downloads and verifies TypeScript language-features `v5.25.3`. The extracted binary runs without replacing the system installation. Each fresh trial profile installs that extension over the editor's bundled copy so the benchmark uses the pinned producer release. Setup checks out the pinned `about-view` revision and installs that fixture's dependencies. Each trial opens `packages/about-view/src/aboutWorkerMain.ts` in the fixture workspace.
+`setup` extracts the pinned official LVCE Editor `v0.120.7` amd64 Debian release after verifying its published SHA-256 digest, then downloads and verifies TypeScript language-features `v5.25.3`. The extracted binary runs without replacing the system installation. Each fresh trial profile installs that extension over the editor's bundled copy so the benchmark uses the pinned producer release. Setup checks out the pinned `about-view` revision and installs that fixture's dependencies. Each trial opens `packages/about-view/src/aboutWorkerMain.ts` in the fixture workspace.
 
 ## Measurement boundaries
 
