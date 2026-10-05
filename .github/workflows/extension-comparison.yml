@@ -14,7 +14,7 @@ on:
         required: true
       candidate_ref:
         description: Candidate extension commit
-        default: 3c25fe64efb9ae542fa9f0f7127f5bed5fc4caf1
+        default: 9244ef298388804b378eafd23586427c68fedd84
         required: true
       repeats:
         description: Fresh paired iterations (3 to 10)
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           repository: lvce-editor/language-features-typescript
-          ref: ${{ inputs.candidate_ref || '3c25fe64efb9ae542fa9f0f7127f5bed5fc4caf1' }}
+          ref: ${{ inputs.candidate_ref || '9244ef298388804b378eafd23586427c68fedd84' }}
           path: candidate-extension
       - run: nice npm ci && npm run build
         working-directory: baseline-extension
