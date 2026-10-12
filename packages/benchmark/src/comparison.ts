@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { createServer } from 'node:net'
 import { spawn } from 'node:child_process'
 import { chromium, type Browser } from 'playwright'
-import { verifyLvceDiagnostic } from './verifyLvceDiagnostic.ts'
+import { verifyLvceDiagnostic, verifyLvceEditedDiagnostic } from './verifyLvceDiagnostic.ts'
 import { summarizeFilesystemTrace } from './filesystemTrace.ts'
 
 const setup = JSON.parse(await readFile('.tmp/setup.json', 'utf8'))
@@ -13,7 +13,7 @@ const output = resolve(process.env.BENCHMARK_OUTPUT || 'results')
 await mkdir(output, { recursive: true })
 const iterations = Number(process.env.COMPARISON_ITERATIONS || 3)
 if (!Number.isInteger(iterations) || iterations < 1 || iterations > 10) throw new Error('COMPARISON_ITERATIONS must be 1–10')
-if (process.env.COMPARISON_MODE && !['timing', 'filesystem'].includes(process.env.COMPARISON_MODE)) throw new Error('Invalid COMPARISON_MODE')
+if (process.env.COMPARISON_MODE && !['timing', 'filesystem', 'completion', 'diagnostic'].includes(process.env.COMPARISON_MODE)) throw new Error('Invalid COMPARISON_MODE')
 const timeout = Number(process.env.COMPARISON_TIMEOUT_MS || 300000)
 if (!Number.isFinite(timeout) || timeout < 1000 || timeout > 600000) throw new Error('COMPARISON_TIMEOUT_MS must be 1000–600000')
 interface ComparisonTrial {
@@ -22,6 +22,8 @@ interface ComparisonTrial {
   mode: string
   success: boolean
   readyMs: number | null
+  completionMs?: number | null
+  diagnosticMs?: number | null
   filesystem?: ReturnType<typeof summarizeFilesystemTrace>
   error?: string
   interval?: { startSeconds: number; endSeconds: number }
@@ -37,8 +39,10 @@ const port = async () => {
 }
 for (let iteration = 1; iteration <= iterations; iteration++) {
   for (const editor of iteration % 2 ? ['lvce', 'vscode'] : ['vscode', 'lvce']) {
-    for (const mode of process.env.COMPARISON_MODE ? [process.env.COMPARISON_MODE] : ['timing', 'filesystem']) {
+    for (const mode of process.env.COMPARISON_MODE ? [process.env.COMPARISON_MODE] : ['timing', 'filesystem', 'completion', 'diagnostic']) {
       const id = `${editor}-${iteration}-${mode}`
+      const editing = mode === 'completion' || mode === 'diagnostic'
+      const fixture = editing ? comparison.editingFixture : comparison.fixture
       const profile = await mkdtemp(join(tmpdir(), 'ts-compare-'))
       const debugPort = await port()
       const userData = join(profile, 'user-data')
@@ -48,12 +52,12 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
         await cp(setup.extension.directory, join(profile, 'data/lvce/extensions', setup.extension.id), { recursive: true })
       } else {
         await mkdir(join(userData, 'User'), { recursive: true })
-        await writeFile(join(userData, 'User/settings.json'), JSON.stringify({ 'security.workspace.trust.enabled': false, 'workbench.startupEditor': 'none', 'update.mode': 'none', 'telemetry.telemetryLevel': 'off', 'extensions.autoUpdate': false, 'editor.minimap.enabled': false }))
+        await writeFile(join(userData, 'User/settings.json'), JSON.stringify({ 'security.workspace.trust.enabled': false, 'workbench.startupEditor': 'none', 'update.mode': 'none', 'telemetry.telemetryLevel': 'off', 'extensions.autoUpdate': false, 'editor.minimap.enabled': false, 'git.openRepositoryInParentFolders': 'never' }))
       }
       const binary = editor === 'lvce' ? setup.editor.binary : comparison.vscode.binary
       const args = ['--no-sandbox', '--disable-gpu', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${userData}`,
         ...(editor === 'vscode' ? ['--skip-welcome', '--skip-release-notes', '--disable-workspace-trust', `--extensions-dir=${join(profile, 'extensions')}`] : []),
-        comparison.fixture.workspace, comparison.fixture.file]
+        fixture.workspace, fixture.file]
       let browser: Browser | undefined
       const tracePath = join(output, `${id}.strace`)
       const startedSeconds = Date.now() / 1000
@@ -85,20 +89,65 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
         }
         if (!page) throw new Error('Editor page missing')
         const selector = editor === 'lvce' ? '.Diagnostic.DiagnosticError' : '.monaco-editor .squiggly-error'
-        await page.locator(selector).first().waitFor({ state: 'visible', timeout: Math.max(1, deadline - Date.now()) })
-        const readyMs = performance.now() - started
-        endedSeconds = Date.now() / 1000
-        if (editor === 'lvce') {
-          const diagnostic = await verifyLvceDiagnostic(browser, comparison.fixture.file, comparison.fixture.expected)
-          await writeFile(join(output, `${id}-diagnostic.json`), JSON.stringify(diagnostic, null, 2))
+        let readyMs: number | null = null
+        let completionMs: number | null = null
+        let diagnosticMs: number | null = null
+        if (editing) {
+          const fileContent = editor === 'lvce'
+            ? page.locator('.EditorRows').filter({ hasText: 'void scene' })
+            : page.locator('.monaco-editor[data-uri^="file://"]').filter({ hasText: 'void scene' })
+          await fileContent.waitFor({ state: 'visible', timeout: Math.max(1, deadline - Date.now()) })
+          const input = editor === 'lvce' ? page.locator('.EditorInput textarea') : fileContent
+          await input.focus()
+          await input.press('Control+End')
+          await input.press('Enter')
+          const edit = mode === 'completion' ? 'scene.' : 'scene.definitelyMissing = 1'
+          const actionStarted = performance.now()
+          await page.keyboard.type(edit)
+          if (mode === 'completion') {
+            await page.keyboard.press('Control+Space')
+            const suggestion = editor === 'lvce'
+              ? page.locator('.EditorCompletionItem').getByText(comparison.editingFixture.completion, { exact: true }).first()
+              : page.locator('.suggest-widget').getByText(comparison.editingFixture.completion, { exact: true }).first()
+            await suggestion.waitFor({ state: 'visible', timeout: Math.max(1, deadline - Date.now()) })
+            completionMs = performance.now() - actionStarted
+            const visible = (await suggestion.innerText()).trim()
+            if (visible !== comparison.editingFixture.completion) throw new Error(`Unexpected completion label: ${visible}`)
+            await writeFile(join(output, `${id}-completion.json`), JSON.stringify({ expected: comparison.editingFixture.completion, visible, file: fixture.file }, null, 2))
+          } else {
+            const underline = page.locator(selector).last()
+            await underline.waitFor({ state: 'visible', timeout: Math.max(1, deadline - Date.now()) })
+            let diagnostic: unknown
+            if (editor === 'lvce') {
+              diagnostic = await verifyLvceEditedDiagnostic(browser, fixture.file, `${await readFile(fixture.file, 'utf8')}\n${edit}`, comparison.editingFixture.diagnosticCode, comparison.editingFixture.diagnosticMessage)
+            } else {
+              await underline.hover({ force: true, timeout: 5000 })
+              const hover = page.locator('.monaco-hover:visible').first()
+              await hover.getByText(comparison.editingFixture.diagnosticMessage, { exact: false }).waitFor({ state: 'visible', timeout: 10000 })
+              const message = await hover.innerText()
+              if (!message.includes(comparison.editingFixture.diagnosticMessage) || !message.includes(`(${comparison.editingFixture.diagnosticCode})`)) throw new Error(`Unexpected diagnostic hover: ${message}`)
+              diagnostic = { code: comparison.editingFixture.diagnosticCode, message }
+            }
+            diagnosticMs = performance.now() - actionStarted
+            await writeFile(join(output, `${id}-diagnostic.json`), JSON.stringify(diagnostic, null, 2))
+          }
+          await page.screenshot({ path: join(output, `${id}.png`), timeout: 10000 })
         } else {
-          await page.locator(selector).first().hover({ force: true, timeout: 5000 })
-          await page.getByText(comparison.fixture.expected, { exact: false }).first().waitFor({ state: 'visible', timeout: 10000 })
+          await page.locator(selector).first().waitFor({ state: 'visible', timeout: Math.max(1, deadline - Date.now()) })
+          readyMs = performance.now() - started
+          endedSeconds = Date.now() / 1000
+          if (editor === 'lvce') {
+            const diagnostic = await verifyLvceDiagnostic(browser, fixture.file, fixture.expected)
+            await writeFile(join(output, `${id}-diagnostic.json`), JSON.stringify(diagnostic, null, 2))
+          } else {
+            await page.locator(selector).first().hover({ force: true, timeout: 5000 })
+            await page.getByText(fixture.expected, { exact: false }).first().waitFor({ state: 'visible', timeout: 10000 })
+          }
+          await page.screenshot({ path: join(output, `${id}.png`), timeout: 10000 })
         }
-        await page.screenshot({ path: join(output, `${id}.png`), timeout: 10000 })
-        results.push({ editor, iteration, mode, success: true, readyMs: mode === 'timing' ? readyMs : null })
+        results.push({ editor, iteration, mode, success: true, readyMs: mode === 'timing' ? readyMs : null, completionMs, diagnosticMs })
       } catch (error) {
-        results.push({ editor, iteration, mode, success: false, readyMs: null, error: String(error) })
+        results.push({ editor, iteration, mode, success: false, readyMs: null, completionMs: null, diagnosticMs: null, error: String(error) })
         const page = browser?.contexts().flatMap((context) => context.pages())[0]
         if (page) {
           await writeFile(join(output, `${id}-failure.html`), await page.content().catch(() => ''))
@@ -126,7 +175,7 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
         }
       }
       console.log({ ...trial, filesystem: trial.filesystem && { ...trial.filesystem, paths: `${trial.filesystem.paths.length} paths retained in comparison.json` } })
-      await writeFile(join(output, 'comparison.json'), JSON.stringify({ schemaVersion: 1, metadata: { node: process.version, platform: process.platform, architecture: process.arch, cachePolicy: 'fresh editor profile; OS caches retained', ...comparison, lvce: setup.editor, extension: setup.extension }, trials: results }, null, 2))
+      await writeFile(join(output, 'comparison.json'), JSON.stringify({ schemaVersion: 2, metadata: { node: process.version, platform: process.platform, architecture: process.arch, cachePolicy: 'fresh editor profiles; OS caches retained', ...comparison, lvce: setup.editor, extension: setup.extension }, trials: results }, null, 2))
     }
   }
 }

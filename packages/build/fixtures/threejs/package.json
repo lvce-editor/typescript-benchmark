@@ -1,0 +1,10 @@
+{
+  "name": "typescript-benchmark-threejs-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "three": "0.186.1",
+    "@types/three": "0.186.0"
+  }
+}
