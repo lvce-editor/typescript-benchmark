@@ -29,3 +29,28 @@ export const verifyLvceDiagnostic = async (browser: Browser, file: string, expec
     await root.detach().catch(() => {})
   }
 }
+
+export const verifyLvceEditedDiagnostic = async (browser: Browser, file: string, text: string, code: number, expectedMessage: string) => {
+  const root = await browser.newBrowserCDPSession()
+  let worker: TargetSession | undefined
+  try {
+    const { targetInfos } = await root.send('Target.getTargets') as { targetInfos: TargetInfo[] }
+    const target = findTypeScriptWorker(targetInfos)
+    if (!target) throw new Error('TypeScript worker missing after visible edited diagnostic')
+    const { sessionId } = await root.send('Target.attachToTarget', { targetId: target.targetId, flatten: false })
+    worker = new TargetSession(root, sessionId)
+    const document = { uri: pathToFileURL(file).href, text }
+    const response = await worker.send<{ result?: { value?: { code: number; uri: string; message: string }[] }; exceptionDetails?: unknown }>('Runtime.evaluate', {
+      expression: `globalThis.rpc.invoke('TypeScriptRpc.invoke', 'Diagnostic.getDiagnostics', ${JSON.stringify(document)})`, awaitPromise: true, returnByValue: true,
+    }, 30000)
+    const diagnostics = response.result?.value
+    const expected = diagnostics?.find((diagnostic) => diagnostic.code === code && diagnostic.uri === document.uri && diagnostic.message.includes(expectedMessage))
+    if (response.exceptionDetails || !Array.isArray(diagnostics) || !expected) {
+      throw new Error(`Unexpected edited diagnostic after visible underline: ${JSON.stringify(response)}`)
+    }
+    return expected
+  } finally {
+    await worker?.close()
+    await root.detach().catch(() => {})
+  }
+}

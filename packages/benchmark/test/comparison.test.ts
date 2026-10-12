@@ -43,3 +43,21 @@ test('comparison report separates traced trials from timing and exposes failed/m
   assert.match(html, /&lt;timeout&gt;/)
   assert.match(html, /&lt;script&gt;/)
 })
+
+test('comparison report shows separate editing medians, samples and failed readings', () => {
+  const html = renderComparison({ metadata: {}, trials: [
+    { editor: 'lvce', iteration: 1, mode: 'completion', success: true, readyMs: null, completionMs: 8 },
+    { editor: 'lvce', iteration: 2, mode: 'completion', success: true, readyMs: null, completionMs: 12 },
+    { editor: 'vscode', iteration: 1, mode: 'completion', success: false, readyMs: null, completionMs: null, error: 'suggestion timeout' },
+    { editor: 'lvce', iteration: 1, mode: 'diagnostic', success: true, readyMs: null, diagnosticMs: 18 },
+    { editor: 'vscode', iteration: 1, mode: 'diagnostic', success: false, readyMs: null, diagnosticMs: null, error: 'wrong diagnostic' },
+  ] })
+  assert.match(html, /Edit to visible Three\.js completion/)
+  assert.match(html, /10\.0 ms/)
+  assert.match(html, /Samples: 8\.0 ms, 12\.0 ms/)
+  assert.match(html, /Edit to visible Three\.js diagnostic/)
+  assert.match(html, /18\.0 ms/)
+  assert.match(html, /unavailable/)
+  assert.match(html, /suggestion timeout/)
+  assert.match(html, /wrong diagnostic/)
+})

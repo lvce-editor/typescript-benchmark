@@ -36,6 +36,8 @@ jobs:
       - run: npm ci
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
       - run: npm run type-check
+      - run: npm ci --prefix packages/build/fixtures/threejs
+      - run: npx tsc --noEmit -p packages/build/fixtures/threejs/tsconfig.json
       - run: npm test
       - run: npm run test:report
   benchmark:
