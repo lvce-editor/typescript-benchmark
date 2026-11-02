@@ -8,12 +8,12 @@ import { brotliDecompressSync } from 'node:zlib'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const cache = resolve(process.env.TYPESCRIPT_BENCHMARK_CACHE || join(root, '.tmp/cache'))
 const resultPath = join(root, '.tmp/setup.json')
-const editorTag = 'v0.127.4'
+const editorTag = 'v0.127.5'
 const editorDataDirectoryName = 'lvce'
 const extensionRelease = 'v5.25.3'
 const extensionId = 'builtin.language-features-typescript'
 const editorAsset = `lvce-${editorTag}_amd64.deb`
-const editorSha256 = '500a9ea0615bdd9fa0114ff32d9434e26f2ad1e74149fe47449d93173cc2452b'
+const editorSha256 = '10ef23d68609ec11e70ca5a88ce1a198aa4adb7589b6d372c92cbed2693c32e1'
 const extensionAsset = `language-features-typescript-${extensionRelease}.tar.br`
 const extensionSha256 = '10024d377313f2b811ab1242f387e57ea46ff3dc0a69dbeba4ac1f842557b097'
 const aboutViewCommit = '15fe112cf4b82ab72eaa6d29589aede9e53d96d4'
