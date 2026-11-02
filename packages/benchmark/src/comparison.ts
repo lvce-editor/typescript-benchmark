@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createServer } from 'node:net'
 import { spawn } from 'node:child_process'
-import { chromium, type Browser } from 'playwright'
+import { chromium, type Browser, type CDPSession } from 'playwright'
 import { verifyLvceDiagnostic, verifyLvceEditedDiagnostic } from './verifyLvceDiagnostic.ts'
 import { summarizeFilesystemTrace } from './filesystemTrace.ts'
+import { TargetSession } from './targetSession.ts'
+import type { TargetInfo } from './types.ts'
 
 const setup = JSON.parse(await readFile('.tmp/setup.json', 'utf8'))
 const comparison = JSON.parse(await readFile('.tmp/comparison-setup.json', 'utf8'))
@@ -154,6 +156,30 @@ for (let iteration = 1; iteration <= iterations; iteration++) {
           await page.screenshot({ path: join(output, `${id}-failure.png`), timeout: 5000 }).catch(() => {})
         }
       } finally {
+        if (process.env.COMPARISON_CAPTURE === '1' && browser) {
+          let root: CDPSession | undefined
+          const messages: unknown[] = []
+          try {
+            root = await browser.newBrowserCDPSession()
+            const page = browser.contexts().flatMap(context => context.pages())[0]
+            messages.push({ target: 'page', entries: await page.evaluate('globalThis.___receivedMessages || []') })
+            const { targetInfos } = await root.send('Target.getTargets') as { targetInfos: TargetInfo[] }
+            for (const target of targetInfos.filter(target => target.url.includes('editorWorkerMain.js'))) {
+              const { sessionId } = await root.send('Target.attachToTarget', { targetId: target.targetId, flatten: false })
+              const session = new TargetSession(root, sessionId)
+              try {
+                messages.push({ target, response: await session.send('Runtime.evaluate', { expression: 'globalThis.___receivedMessages || []', returnByValue: true }) })
+              } finally {
+                await session.close()
+              }
+            }
+          } catch (error) {
+            messages.push({ captureError: String(error) })
+          } finally {
+            await root?.detach().catch(() => {})
+            await writeFile(join(output, `allmessages-${id}-${process.env.COMPARISON_ATTEMPT || 'local'}.json`), JSON.stringify(messages, null, 2)).catch(error => console.error('Capture write failed:', error))
+          }
+        }
         await browser?.close().catch(() => {})
         if (child.pid) {
           try { process.kill(-child.pid, 'SIGTERM') } catch {}
